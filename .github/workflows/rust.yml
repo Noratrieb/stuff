@@ -7,14 +7,11 @@ on:
   pull_request:
     branches:
       - main
-  schedule:
-    - cron: "00 01 * * *"
 
 env:
   RUST_BACKTRACE: 1
 
 jobs:
-  # Test on stable and MSRV
   test:
     name: Test Rust - ${{ matrix.build }}
     runs-on: ${{ matrix.os }}
@@ -32,7 +29,6 @@ jobs:
           - win64-gnu
           - win32-msvc
           - win32-gnu
-          - msrv
           - beta
           - nightly
           - arm32
