@@ -21,6 +21,27 @@ pub mod test_strategies {
     use crate::StuffingStrategy;
     use std::fmt::{Debug, Formatter};
 
+    macro_rules! impl_usize_max_zst {
+        ($ty:ident) => {
+            // this one lives in usize::MAX
+            unsafe impl StuffingStrategy for $ty {
+                type Extra = Self;
+
+                fn is_extra(data: usize) -> bool {
+                    data == usize::MAX
+                }
+
+                fn stuff_extra(_inner: Self::Extra) -> usize {
+                    usize::MAX
+                }
+
+                fn extract_extra(_data: usize) -> Self::Extra {
+                    $ty
+                }
+            }
+        };
+    }
+
     pub struct HasDebug;
 
     impl Debug for HasDebug {
@@ -29,19 +50,15 @@ pub mod test_strategies {
         }
     }
 
-    unsafe impl StuffingStrategy for HasDebug {
-        type Extra = Self;
+    impl_usize_max_zst!(HasDebug);
 
-        fn is_extra(data: usize) -> bool {
-            data == usize::MAX
-        }
+    pub struct PanicsInDrop;
 
-        fn stuff_extra(_inner: Self::Extra) -> usize {
-            usize::MAX
-        }
-
-        fn extract_extra(_data: usize) -> Self::Extra {
-            Self
+    impl Drop for PanicsInDrop {
+        fn drop(&mut self) {
+            panic!("oh no!!!");
         }
     }
+
+    impl_usize_max_zst!(PanicsInDrop);
 }

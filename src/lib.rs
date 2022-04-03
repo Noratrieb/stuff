@@ -130,7 +130,7 @@ fn map_ptr<T>(ptr: *mut T, map: impl FnOnce(usize) -> usize) -> *mut T {
 
 #[cfg(test)]
 mod tests {
-    use crate::strategies::test_strategies::HasDebug;
+    use crate::strategies::test_strategies::{HasDebug, PanicsInDrop};
     use crate::StuffedPtr;
 
     #[test]
@@ -159,5 +159,14 @@ mod tests {
             format!("{stuffed_ptr:?}"),
             "StuffedPtr::Extra { extra: hello! }"
         );
+    }
+
+    #[test]
+    #[should_panic]
+    fn needs_drop() {
+        let extra = PanicsInDrop;
+        let stuffed_ptr: StuffedPtr<(), PanicsInDrop> = StuffedPtr::new_extra(extra);
+        // the panicking drop needs to be called here!
+        drop(stuffed_ptr);
     }
 }
