@@ -1,5 +1,3 @@
-# adapted from https://github.com/thomcc/arcstr/blob/main/.github/workflows/ci.yml
-
 name: CI
 
 on:
@@ -7,11 +5,16 @@ on:
     branches:
       - main
   pull_request:
+    branches:
+      - main
+  schedule:
+    - cron: "00 01 * * *"
 
 env:
   RUST_BACKTRACE: 1
 
 jobs:
+  # Test on stable and MSRV
   test:
     name: Test Rust - ${{ matrix.build }}
     runs-on: ${{ matrix.os }}
@@ -65,6 +68,7 @@ jobs:
             os: ubuntu-latest
             rust: stable
             target: i686-unknown-linux-gnu
+          # These should prob. be more generic arm targets and not android.
           - build: arm32
             os: ubuntu-latest
             rust: stable
@@ -82,6 +86,10 @@ jobs:
             os: ubuntu-latest
             rust: stable
             target: mips64-unknown-linux-gnuabi64
+          - build: riscv
+            os: ubuntu-latest
+            rust: stable
+            target: riscv64gc-unknown-linux-gnu
 
     steps:
       - uses: actions/checkout@v2
