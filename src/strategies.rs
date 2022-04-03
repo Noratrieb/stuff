@@ -11,7 +11,7 @@ unsafe impl StuffingStrategy for () {
         0
     }
 
-    fn extract_extra(_data: usize) -> Self::Extra {
+    unsafe fn extract_extra(_data: usize) -> Self::Extra {
         ()
     }
 }
@@ -31,16 +31,22 @@ pub mod test_strategies {
                     data == usize::MAX
                 }
 
-                fn stuff_extra(_inner: Self::Extra) -> usize {
+                fn stuff_extra(inner: Self::Extra) -> usize {
+                    std::mem::forget(inner);
                     usize::MAX
                 }
 
-                fn extract_extra(_data: usize) -> Self::Extra {
+                unsafe fn extract_extra(_data: usize) -> Self::Extra {
                     $ty
                 }
             }
         };
     }
+
+    #[derive(Clone, Copy)]
+    pub struct EmptyInMax;
+
+    impl_usize_max_zst!(EmptyInMax);
 
     pub struct HasDebug;
 
@@ -52,6 +58,7 @@ pub mod test_strategies {
 
     impl_usize_max_zst!(HasDebug);
 
+    #[derive(Debug, Clone, PartialEq, Eq)]
     pub struct PanicsInDrop;
 
     impl Drop for PanicsInDrop {

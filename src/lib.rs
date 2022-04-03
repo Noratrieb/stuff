@@ -1,11 +1,19 @@
+#![warn(rust_2018_idioms)]
+#![deny(unsafe_op_in_unsafe_fn)]
+#![warn(missing_docs)]
+
+//! A crate for stuffing things into a pointer.
+
 mod strategies;
 
 use std::fmt::{Debug, Formatter};
 use std::marker::PhantomData;
+use std::mem;
 use std::ops::Not;
 
 use sptr::Strict;
 
+/// A union of a pointer and some extra data.
 pub struct StuffedPtr<T, S>(*mut T, PhantomData<S>)
 where
     S: StuffingStrategy;
@@ -14,10 +22,12 @@ impl<T, S> StuffedPtr<T, S>
 where
     S: StuffingStrategy,
 {
+    /// Create a new `StuffedPtr` from a pointer
     pub fn new_ptr(ptr: *mut T) -> Self {
         Self(map_ptr(ptr, S::stuff_ptr), PhantomData)
     }
 
+    /// Create a new `StuffPtr` from extra
     pub fn new_extra(extra: S::Extra) -> Self {
         // this doesn't have any provenance, which is ok, since it's never a pointer anyways.
         // if the user calls `set_ptr` it will use the new provenance from that ptr
@@ -26,26 +36,56 @@ where
         Self(ptr, PhantomData)
     }
 
-    pub unsafe fn get_ptr(&self) -> Option<*mut T> {
-        self.is_extra().not().then(|| self.get_ptr_unchecked())
+    /// Get the pointer data, or `None` if it contains extra
+    pub fn get_ptr(&self) -> Option<*mut T> {
+        self.is_extra().not().then(|| {
+            // SAFETY: We have done a check that it's not extra
+            unsafe { self.get_ptr_unchecked() }
+        })
     }
 
+    /// Get the pointer data
+    /// # Safety
+    /// Must contain pointer data and not extra
     pub unsafe fn get_ptr_unchecked(&self) -> *mut T {
         map_ptr(self.0, S::extract_ptr)
     }
 
-    pub unsafe fn into_extra_unchecked(self) -> S::Extra {
-        let data = self.addr();
-        S::extract_extra(data)
+    /// Get owned extra data from this, or `None` if it contains pointer data
+    pub fn into_extra(self) -> Option<S::Extra> {
+        self.is_extra().then(|| {
+            // SAFETY: We checked that it contains an extra above
+            unsafe { self.into_extra_unchecked() }
+        })
     }
 
+    /// Get owned extra data from this
+    /// # Safety
+    /// Must contain extra data and not pointer
+    pub unsafe fn into_extra_unchecked(self) -> S::Extra {
+        // SAFETY: `self` is consumed and forgotten after this call
+        let extra = unsafe { self.get_extra_unchecked() };
+        mem::forget(self);
+        extra
+    }
+
+    /// Get extra data from this, or `None` if it contains pointer data
+    /// # Safety
+    /// The caller must guarantee that only ever on `Extra` exists if `Extra: !Copy`
+    pub unsafe fn get_extra(&self) -> Option<S::Extra> {
+        self.is_extra().then(|| {
+            // SAFETY: We checked that it contains extra above, the caller guarantees the rest
+            unsafe { self.get_extra_unchecked() }
+        })
+    }
+
+    /// Get extra data from this
+    /// # Safety
+    /// Must contain extra data and not pointer data,
+    /// and the caller must guarantee that only ever on `Extra` exists if `Extra: !Copy`
     pub unsafe fn get_extra_unchecked(&self) -> S::Extra {
         let data = self.addr();
-        S::extract_extra(data)
-    }
-
-    pub unsafe fn get_extra(&self) -> Option<S::Extra> {
-        self.is_extra().then(|| self.get_extra_unchecked())
+        unsafe { S::extract_extra(data) }
     }
 
     fn addr(&self) -> usize {
@@ -57,22 +97,41 @@ where
     }
 }
 
+impl<T, S> StuffedPtr<T, S>
+where
+    S: StuffingStrategy,
+    S::Extra: Copy,
+{
+    /// Get extra data from this, or `None` if it's pointer data
+    pub fn copy_extra(&self) -> Option<S::Extra> {
+        // SAFETY: `S::Extra: Copy`
+        unsafe { self.get_extra() }
+    }
+
+    /// Get extra data from this
+    /// # Safety
+    /// Must contain extra data and not pointer data,
+    pub unsafe fn copy_extra_unchecked(&self) -> S::Extra {
+        // SAFETY: `S::Extra: Copy`, and the caller guarantees that it's extra
+        unsafe { self.get_extra_unchecked() }
+    }
+}
+
 impl<T, S> Debug for StuffedPtr<T, S>
 where
     S: StuffingStrategy,
     S::Extra: Debug,
 {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        if self.is_extra() {
-            // SAFETY: We checked that self contains the extra
-            // Note: if S::Extra: !Copy, we can't just copy it out and call it a day
-            // For example, if it's a Box, not forgetting it here would lead to a double free
-            // So we just format it and forget it afterwards
-            let extra = unsafe { self.get_extra_unchecked() };
+        // SAFETY:
+        // If S::Extra: !Copy, we can't just copy it out and call it a day
+        // For example, if it's a Box, not forgetting it here would lead to a double free
+        // So we just format it and forget it afterwards
+        if let Some(extra) = unsafe { self.get_extra() } {
             f.debug_struct("StuffedPtr::Extra")
                 .field("extra", &extra)
                 .finish()?;
-            std::mem::forget(extra);
+            mem::forget(extra);
             Ok(())
         } else {
             let ptr = map_ptr(self.0, S::extract_ptr);
@@ -98,6 +157,63 @@ where
     }
 }
 
+impl<T, S> Clone for StuffedPtr<T, S>
+where
+    S: StuffingStrategy,
+    S::Extra: Clone,
+{
+    fn clone(&self) -> Self {
+        // SAFETY: We forget that `extra` ever existed after taking the reference and cloning it
+        if let Some(extra) = unsafe { self.get_extra() } {
+            let cloned_extra = extra.clone();
+            mem::forget(extra);
+            Self::new_extra(cloned_extra)
+        } else {
+            // just copy the pointer
+            Self(self.0, PhantomData)
+        }
+    }
+}
+
+impl<T, S> PartialEq for StuffedPtr<T, S>
+where
+    S: StuffingStrategy,
+    S::Extra: PartialEq,
+{
+    fn eq(&self, other: &Self) -> bool {
+        // SAFETY: We forget them after
+        let extras = unsafe { (self.get_extra(), other.get_extra()) };
+
+        let eq = match &extras {
+            (Some(extra1), Some(extra2)) => extra1.eq(extra2),
+            (None, None) => {
+                // SAFETY: `get_extra` returned `None`, so it must be a ptr
+                unsafe {
+                    let ptr1 = self.get_ptr_unchecked();
+                    let ptr2 = self.get_ptr_unchecked();
+                    std::ptr::eq(ptr1, ptr2)
+                }
+            }
+            _ => false,
+        };
+
+        mem::forget(extras);
+
+        eq
+    }
+}
+
+// pointers are `Eq`
+fn _assert_eq<T: Eq>() {}
+const _: fn() = _assert_eq::<*mut ()>;
+
+impl<T, S> Eq for StuffedPtr<T, S>
+where
+    S: StuffingStrategy,
+    S::Extra: PartialEq + Eq,
+{
+}
+
 impl<T, S> From<Box<T>> for StuffedPtr<T, S>
 where
     S: StuffingStrategy,
@@ -107,16 +223,49 @@ where
     }
 }
 
+/// A trait that describes how to stuff extras and pointers into the pointer sized object.
+/// # Safety
+///
+/// If [`StuffingStrategy::is_extra`] returns true for a value, then
+/// [`StuffingStrategy::extract_extra`] *must* return a valid `Extra` for that same value.
+///
+/// [`StuffingStrategy::stuff_extra`] *must* consume `inner` and make sure that it's not dropped
+/// if it isn't `Copy`.
+///
+/// For [`StuffingStrategy::stuff_ptr`] and [`StuffingStrategy::extract_ptr`],
+/// `ptr == extract_ptr(stuff_ptr(ptr))` *must* hold true.
 pub unsafe trait StuffingStrategy {
+    /// The type of the extra.
     type Extra;
 
+    /// Checks whether the `StufferPtr` data value contains an extra value. The result of this
+    /// function can be trusted.
     fn is_extra(data: usize) -> bool;
-    fn stuff_extra(inner: Self::Extra) -> usize;
-    fn extract_extra(data: usize) -> Self::Extra;
 
+    /// Stuff extra data into a usize that is then put into the pointer. This operation
+    /// must be infallible.
+    fn stuff_extra(inner: Self::Extra) -> usize;
+
+    /// Extract extra data from the data.
+    /// # Safety
+    /// `data` must contain data created by [`StuffingStrategy::stuff_extra`].
+    unsafe fn extract_extra(data: usize) -> Self::Extra;
+
+    /// Stuff a pointer address into the pointer sized integer.
+    ///
+    /// This can be used to optimize away some of the unnecessary parts of the pointer or do other
+    /// cursed things with it.
+    ///
+    /// The default implementation just returns the address directly.
     fn stuff_ptr(inner: usize) -> usize {
         inner
     }
+
+    /// Extract the pointer address from the data.
+    ///
+    /// This function expects `inner` to come directly from [`StuffingStrategy::stuff_ptr`].
+    ///
+    /// The default implementation just returns the value directly.
     fn extract_ptr(inner: usize) -> usize {
         inner
     }
@@ -130,8 +279,9 @@ fn map_ptr<T>(ptr: *mut T, map: impl FnOnce(usize) -> usize) -> *mut T {
 
 #[cfg(test)]
 mod tests {
-    use crate::strategies::test_strategies::{HasDebug, PanicsInDrop};
+    use crate::strategies::test_strategies::{EmptyInMax, HasDebug, PanicsInDrop};
     use crate::StuffedPtr;
+    use std::mem;
 
     #[test]
     fn set_get_ptr_no_extra() {
@@ -145,6 +295,13 @@ mod tests {
     }
 
     #[test]
+    fn get_extra() {
+        let stuffed_ptr: StuffedPtr<(), EmptyInMax> = StuffedPtr::new_extra(EmptyInMax);
+        assert!(stuffed_ptr.is_extra());
+        assert!(matches!(stuffed_ptr.copy_extra(), Some(EmptyInMax)));
+    }
+
+    #[test]
     fn debug() {
         let boxed = Box::new(1);
         let stuffed_ptr: StuffedPtr<i32, HasDebug> = boxed.into();
@@ -154,7 +311,6 @@ mod tests {
 
         let extra = HasDebug;
         let stuffed_ptr: StuffedPtr<i32, HasDebug> = StuffedPtr::new_extra(extra);
-        println!("{:?} {:X}", stuffed_ptr.0, usize::MAX);
         assert_eq!(
             format!("{stuffed_ptr:?}"),
             "StuffedPtr::Extra { extra: hello! }"
@@ -163,10 +319,33 @@ mod tests {
 
     #[test]
     #[should_panic]
-    fn needs_drop() {
-        let extra = PanicsInDrop;
-        let stuffed_ptr: StuffedPtr<(), PanicsInDrop> = StuffedPtr::new_extra(extra);
+    fn drop_extra_when_extra() {
+        let stuffed_ptr: StuffedPtr<(), PanicsInDrop> = StuffedPtr::new_extra(PanicsInDrop);
         // the panicking drop needs to be called here!
         drop(stuffed_ptr);
+    }
+
+    #[test]
+    fn dont_drop_extra_when_pointer() {
+        let mut unit = ();
+        let stuffed_ptr: StuffedPtr<(), PanicsInDrop> = StuffedPtr::new_ptr(&mut unit);
+        // the panicking drop needs not to be called here!
+        drop(stuffed_ptr);
+    }
+
+    #[test]
+    fn some_traits_dont_drop() {
+        // make sure that extra is never dropped twice
+
+        let stuffed_ptr1: StuffedPtr<(), PanicsInDrop> = StuffedPtr::new_extra(PanicsInDrop);
+        let stuffed_ptr2: StuffedPtr<(), PanicsInDrop> = StuffedPtr::new_extra(PanicsInDrop);
+
+        // PartialEq
+        assert_eq!(stuffed_ptr1, stuffed_ptr2);
+        // Debug
+        let _ = format!("{stuffed_ptr1:?}");
+
+        mem::forget(stuffed_ptr1);
+        mem::forget(stuffed_ptr2);
     }
 }
