@@ -325,6 +325,7 @@ mod tests {
     }
 
     #[test]
+    #[allow(clippy::redundant_clone)]
     fn clone() {
         let mut unit = ();
         let stuffed_ptr1: StuffedPtr<(), PanicsInDrop> = StuffedPtr::new_ptr(&mut unit);

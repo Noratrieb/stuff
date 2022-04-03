@@ -15,9 +15,7 @@ unsafe impl StuffingStrategy for () {
         0
     }
 
-    unsafe fn extract_extra(_data: usize) -> Self::Extra {
-        ()
-    }
+    unsafe fn extract_extra(_data: usize) -> Self::Extra {}
 }
 
 #[cfg(test)]
@@ -35,6 +33,7 @@ pub(crate) mod test_strategies {
                     data == usize::MAX
                 }
 
+                #[allow(clippy::forget_copy)]
                 fn stuff_extra(inner: Self::Extra) -> usize {
                     std::mem::forget(inner);
                     usize::MAX
