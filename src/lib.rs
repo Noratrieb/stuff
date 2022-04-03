@@ -4,7 +4,7 @@
 
 //! A crate for stuffing things into a pointer.
 
-mod strategies;
+pub mod strategies;
 
 use std::fmt::{Debug, Formatter};
 use std::marker::PhantomData;
@@ -203,10 +203,6 @@ where
     }
 }
 
-// pointers are `Eq`
-fn _assert_eq<T: Eq>() {}
-const _: fn() = _assert_eq::<*mut ()>;
-
 impl<T, S> Eq for StuffedPtr<T, S>
 where
     S: StuffingStrategy,
@@ -283,6 +279,9 @@ mod tests {
     use crate::StuffedPtr;
     use std::mem;
 
+    // note: the tests mostly use the `PanicsInDrop` type and strategy, to make sure that no
+    // extra is ever dropped accidentally.
+
     #[test]
     fn set_get_ptr_no_extra() {
         unsafe {
@@ -326,6 +325,34 @@ mod tests {
     }
 
     #[test]
+    fn clone() {
+        let mut unit = ();
+        let stuffed_ptr1: StuffedPtr<(), PanicsInDrop> = StuffedPtr::new_ptr(&mut unit);
+        let _ = stuffed_ptr1.clone();
+
+        let stuffed_ptr1: StuffedPtr<(), PanicsInDrop> = StuffedPtr::new_extra(PanicsInDrop);
+        let stuffed_ptr2 = stuffed_ptr1.clone();
+
+        mem::forget((stuffed_ptr1, stuffed_ptr2));
+    }
+
+    #[test]
+    fn eq() {
+        // two pointers
+        let mut unit = ();
+        let stuffed_ptr1: StuffedPtr<(), PanicsInDrop> = StuffedPtr::new_ptr(&mut unit);
+        let stuffed_ptr2: StuffedPtr<(), PanicsInDrop> = StuffedPtr::new_ptr(&mut unit);
+
+        assert_eq!(stuffed_ptr1, stuffed_ptr2);
+
+        let stuffed_ptr1: StuffedPtr<(), PanicsInDrop> = StuffedPtr::new_ptr(&mut unit);
+        let stuffed_ptr2: StuffedPtr<(), PanicsInDrop> = StuffedPtr::new_extra(PanicsInDrop);
+
+        assert_ne!(stuffed_ptr1, stuffed_ptr2);
+        mem::forget(stuffed_ptr2);
+    }
+
+    #[test]
     fn dont_drop_extra_when_pointer() {
         let mut unit = ();
         let stuffed_ptr: StuffedPtr<(), PanicsInDrop> = StuffedPtr::new_ptr(&mut unit);
@@ -345,7 +372,6 @@ mod tests {
         // Debug
         let _ = format!("{stuffed_ptr1:?}");
 
-        mem::forget(stuffed_ptr1);
-        mem::forget(stuffed_ptr2);
+        mem::forget((stuffed_ptr1, stuffed_ptr2));
     }
 }

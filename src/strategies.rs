@@ -1,3 +1,7 @@
+//! Several pre-defined strategies to use with `StuffedPtr`.
+//!
+//! * `()`: An empty strategy, is always the pointer
+
 use crate::StuffingStrategy;
 
 unsafe impl StuffingStrategy for () {
@@ -17,7 +21,7 @@ unsafe impl StuffingStrategy for () {
 }
 
 #[cfg(test)]
-pub mod test_strategies {
+pub(crate) mod test_strategies {
     use crate::StuffingStrategy;
     use std::fmt::{Debug, Formatter};
 
