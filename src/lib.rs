@@ -32,7 +32,8 @@
 //! for more details.
 //! ```
 //! use std::collections::HashMap;
-//! use ptr_stuff::{StuffedPtr, StuffingStrategy};
+//!
+//! use stuff::{StuffedPtr, StuffingStrategy};
 //!
 //! // Create a unit struct for our strategy
 //! struct NanBoxStrategy;
