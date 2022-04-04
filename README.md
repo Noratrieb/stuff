@@ -1,5 +1,8 @@
 # stuff
 
+![crates.io](https://img.shields.io/crates/v/stuff.svg) 
+![action checks](https://img.shields.io/github/checks-status/Nilstrieb/stuff/main.svg)
+
 A crate for stuffing things into a pointer.
 
 This crate is tested using miri (with `-Zmiri-tag-raw-pointers`).

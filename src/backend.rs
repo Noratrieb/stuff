@@ -132,8 +132,8 @@ macro_rules! impl_backend_3_tuple {
 
             fn get_int(s: Self::Stored) -> Self {
                 let ptr_addr = Strict::addr(s.0) as $ty;
-                let num1_addr = self.1 as $ty;
-                let num2_addr = self.2 as $ty;
+                let num1_addr = s.1 as $ty;
+                let num2_addr = s.2 as $ty;
                 (ptr_addr << ($num1 + $num2)) | (num1_addr << ($num2)) | num2_addr
             }
         }
