@@ -1,4 +1,4 @@
-# ptr-stuff
+# stuff
 
 A crate for stuffing things into a pointer.
 
