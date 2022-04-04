@@ -12,13 +12,8 @@
 //!
 //! [`StuffedPtr`] is the main type of this crate. You it's a type whose size depends on the
 //! choice of [`Backend`] (defaults to `usize`, `u64` and `u128` are also possible). It can store a
-//! pointer or some extra data, so you can imagine it being
-//! ```rust
-//! enum StuffedPtr<T, E> {
-//!     Ptr(*mut T),
-//!     Extra(E),
-//! }
-//! ```
+//! pointer or some extra data.
+//!
 //! except that the extra data is bitstuffed into the pointer. You can chose any arbitrary bitstuffing
 //! depending on the [`StuffingStrategy`], an unsafe trait that governs how the extra data
 //! (or the pointer itself) will be packed into the backend.
