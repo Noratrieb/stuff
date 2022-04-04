@@ -9,7 +9,7 @@ repository = "https://github.com/Nilstrieb/stuff"
 license = "MIT"
 keywords = ["unsafe", "pointer", "bitpacking", "provenance", "tagging"]
 categories = ["data-structures", "memory-management", "no-std"]
-include = ["Cargo.toml", "LICENSE", "src"]
+include = ["Cargo.toml", "LICENSE", "src", "README.md"]
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
