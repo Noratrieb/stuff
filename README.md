@@ -2,6 +2,8 @@
 
 A crate for stuffing things into a pointer.
 
+This crate is tested using miri (with `-Zmiri-tag-raw-pointers`).
+
 This crate consists of three parts:
 * The type `StuffedPtr`
 * The trait `StuffingStrategy`
