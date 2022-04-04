@@ -7,7 +7,7 @@ readme = "./README.md"
 homepage = "https://github.com/Nilstrieb/stuff"
 repository = "https://github.com/Nilstrieb/stuff"
 license = "MIT"
-keywords = ["unsafe", "pointer", "bitpacking", "provenance", "bitstuffing", "tagging", "ptr"]
+keywords = ["unsafe", "pointer", "bitpacking", "provenance", "tagging"]
 categories = ["data-structures", "memory-management", "no-std"]
 include = ["Cargo.toml", "LICENSE", "src"]
 
