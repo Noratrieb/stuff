@@ -1,4 +1,10 @@
 /// A trait that describes how to stuff extras and pointers into the pointer sized object.
+///
+/// This trait is what a user of this crate is expected to implement to use the crate for their own
+/// pointer stuffing. It's usually implemented on ZSTs that only serve as stuffing strategies, but
+/// it's also completely possible to implement it on the type in [`StuffingStrategy::Extra`] directly
+/// if possible.
+///
 /// # Safety
 ///
 /// If [`StuffingStrategy::is_extra`] returns true for a value, then
@@ -108,7 +114,7 @@ unsafe impl StuffingStrategy<u128> for () {
 
 #[cfg(test)]
 pub(crate) mod test_strategies {
-    use std::fmt::{Debug, Formatter};
+    use core::fmt::{Debug, Formatter};
 
     use super::StuffingStrategy;
 
@@ -124,7 +130,7 @@ pub(crate) mod test_strategies {
 
                 #[allow(clippy::forget_copy)]
                 fn stuff_extra(inner: Self::Extra) -> usize {
-                    std::mem::forget(inner);
+                    core::mem::forget(inner);
                     usize::MAX
                 }
 
@@ -149,7 +155,7 @@ pub(crate) mod test_strategies {
 
                 #[allow(clippy::forget_copy)]
                 fn stuff_extra(inner: Self::Extra) -> u64 {
-                    std::mem::forget(inner);
+                    core::mem::forget(inner);
                     u64::MAX
                 }
 
@@ -175,7 +181,7 @@ pub(crate) mod test_strategies {
 
                 #[allow(clippy::forget_copy)]
                 fn stuff_extra(inner: Self::Extra) -> u128 {
-                    std::mem::forget(inner);
+                    core::mem::forget(inner);
                     u128::MAX
                 }
 
@@ -202,7 +208,7 @@ pub(crate) mod test_strategies {
     pub struct HasDebug;
 
     impl Debug for HasDebug {
-        fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        fn fmt(&self, f: &mut Formatter<'_>) -> core::fmt::Result {
             f.write_str("hello!")
         }
     }

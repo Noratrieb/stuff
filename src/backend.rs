@@ -1,9 +1,22 @@
-use std::mem;
+use core::mem;
 
 use sptr::Strict;
 
 /// A backend where the stuffed pointer is stored. Must be bigger or equal to the pointer size.
-pub trait Backend<T> {
+///
+/// The [`Backend`] is a trait to define types that store the stuffed pointer. It's supposed to
+/// be implemented on `Copy` types like `usize``u64`, `u128`. Note that these integers are basically
+/// just the strategy and exchange types for addresses, but *not* the actual underlying storage, which
+/// always contains a pointer to keep provenance (for example `(*mut T, u32)` on 32 bit for `u64`).
+///
+/// This trait is just exposed for convenience and flexibility, you are usually not expected to implement
+/// it yourself, although such occasions could occur (for example to have a bigger storage than `u128`
+/// or smaller storage that only works on 32-bit or 16-bit platforms.
+///
+/// # Safety
+/// Implementers of this trait *must* keep provenance of pointers, so if a valid pointer address+provenance
+/// combination is set in `set_ptr`, `get_ptr` *must* return the exact same values and provenance.
+pub unsafe trait Backend<T> {
     /// The underlying type where the data is stored. Often a tuple of a pointer (for the provenance)
     /// and some integers to fill up the bytes.
     type Stored: Copy;
@@ -34,7 +47,7 @@ const _: () = assert_same_size::<u128, <u128 as Backend<()>>::Stored>();
 const _: () = assert_same_size::<u64, <u64 as Backend<()>>::Stored>();
 const _: () = assert_same_size::<usize, <usize as Backend<()>>::Stored>();
 
-impl<T> Backend<T> for usize {
+unsafe impl<T> Backend<T> for usize {
     type Stored = *mut T;
 
     fn get_ptr(s: Self::Stored) -> (*mut T, Self) {
@@ -52,7 +65,7 @@ impl<T> Backend<T> for usize {
 
 #[cfg(target_pointer_width = "64")]
 /// on 64 bit, we can just treat u64/usize interchangeably, because uintptr_t == size_t in Rust
-impl<T> Backend<T> for u64 {
+unsafe impl<T> Backend<T> for u64 {
     type Stored = *mut T;
 
     fn get_ptr(s: Self::Stored) -> (*mut T, Self) {
@@ -70,7 +83,7 @@ impl<T> Backend<T> for u64 {
 
 macro_rules! impl_backend_2_tuple {
     (impl for $ty:ty { (*mut T, $int:ident), $num:literal }) => {
-        impl<T> Backend<T> for $ty {
+        unsafe impl<T> Backend<T> for $ty {
             // this one keeps the MSB in the pointer address, and the LSB in the integer
 
             type Stored = (*mut T, $int);
@@ -97,7 +110,7 @@ macro_rules! impl_backend_2_tuple {
 #[cfg_attr(target_pointer_width = "64", allow(unused))] // not required on 64 bit
 macro_rules! impl_backend_3_tuple {
     (impl for $ty:ty { (*mut T, $int1:ident, $int2:ident), $num1:literal, $num2:literal }) => {
-        impl<T> Backend<T> for $ty {
+        unsafe impl<T> Backend<T> for $ty {
             // this one keeps the MSB in the pointer address, ISB in int1 and the LSB in the int2
 
             type Stored = (*mut T, $int1, $int2);
