@@ -24,18 +24,15 @@ pub trait Backend<T> {
 }
 
 #[allow(dead_code)] // :/
-const fn assert_size<B>()
-where
-    B: Backend<()>,
-{
-    let has_equal_size = mem::size_of::<B>() == mem::size_of::<B::Stored>();
+const fn assert_same_size<A, B>() {
+    let has_equal_size = mem::size_of::<A>() == mem::size_of::<B>();
     assert!(has_equal_size);
 }
 
 #[cfg(not(target_pointer_width = "16"))]
-const _: () = assert_size::<u128>();
-const _: () = assert_size::<u64>();
-const _: () = assert_size::<usize>();
+const _: () = assert_same_size::<u128, <u128 as Backend<()>>::Stored>();
+const _: () = assert_same_size::<u64, <u64 as Backend<()>>::Stored>();
+const _: () = assert_same_size::<usize, <usize as Backend<()>>::Stored>();
 
 impl<T> Backend<T> for usize {
     type Stored = *mut T;
