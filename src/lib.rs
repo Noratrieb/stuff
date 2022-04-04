@@ -4,6 +4,7 @@
 
 //! A crate for stuffing things into a pointer.
 
+mod backend;
 pub mod strategies;
 
 use std::fmt::{Debug, Formatter};
@@ -11,20 +12,25 @@ use std::marker::PhantomData;
 use std::mem;
 use std::ops::Not;
 
+use crate::backend::Backend;
 use sptr::Strict;
 
 /// A union of a pointer and some extra data.
-pub struct StuffedPtr<T, S>(*mut T, PhantomData<S>)
+pub struct StuffedPtr<T, S, I = usize>(I::Stored, PhantomData<S>)
 where
-    S: StuffingStrategy;
+    S: StuffingStrategy<I>,
+    I: Backend<T>;
 
-impl<T, S> StuffedPtr<T, S>
+impl<T, S, I> StuffedPtr<T, S, I>
 where
-    S: StuffingStrategy,
+    S: StuffingStrategy<I>,
+    I: Backend<T>,
 {
     /// Create a new `StuffedPtr` from a pointer
     pub fn new_ptr(ptr: *mut T) -> Self {
-        Self(map_ptr(ptr, S::stuff_ptr), PhantomData)
+        let addr = Strict::addr(ptr);
+        let stuffed = S::stuff_ptr(addr);
+        Self(I::set_ptr(ptr, stuffed), PhantomData)
     }
 
     /// Create a new `StuffPtr` from extra
@@ -32,8 +38,8 @@ where
         // this doesn't have any provenance, which is ok, since it's never a pointer anyways.
         // if the user calls `set_ptr` it will use the new provenance from that ptr
         let ptr = std::ptr::null_mut();
-        let ptr = Strict::with_addr(ptr, S::stuff_extra(extra));
-        Self(ptr, PhantomData)
+        let extra = S::stuff_extra(extra);
+        Self(I::set_ptr(ptr, extra), PhantomData)
     }
 
     /// Get the pointer data, or `None` if it contains extra
@@ -48,7 +54,9 @@ where
     /// # Safety
     /// Must contain pointer data and not extra
     pub unsafe fn get_ptr_unchecked(&self) -> *mut T {
-        map_ptr(self.0, S::extract_ptr)
+        let (provenance, addr) = I::get_ptr(self.0);
+        let addr = S::extract_ptr(addr);
+        Strict::with_addr(provenance, addr)
     }
 
     /// Get owned extra data from this, or `None` if it contains pointer data
@@ -88,8 +96,8 @@ where
         unsafe { S::extract_extra(data) }
     }
 
-    fn addr(&self) -> usize {
-        Strict::addr(self.0)
+    fn addr(&self) -> I {
+        I::get_int(self.0)
     }
 
     fn is_extra(&self) -> bool {
@@ -97,10 +105,11 @@ where
     }
 }
 
-impl<T, S> StuffedPtr<T, S>
+impl<T, S, I> StuffedPtr<T, S, I>
 where
-    S: StuffingStrategy,
+    S: StuffingStrategy<I>,
     S::Extra: Copy,
+    I: Backend<T>,
 {
     /// Get extra data from this, or `None` if it's pointer data
     pub fn copy_extra(&self) -> Option<S::Extra> {
@@ -117,10 +126,11 @@ where
     }
 }
 
-impl<T, S> Debug for StuffedPtr<T, S>
+impl<T, S, I> Debug for StuffedPtr<T, S, I>
 where
-    S: StuffingStrategy,
+    S: StuffingStrategy<I>,
     S::Extra: Debug,
+    I: Backend<T>,
 {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         // SAFETY:
@@ -134,7 +144,8 @@ where
             mem::forget(extra);
             Ok(())
         } else {
-            let ptr = map_ptr(self.0, S::extract_ptr);
+            // SAFETY: Checked above
+            let ptr = unsafe { self.get_ptr_unchecked() };
             f.debug_struct("StuffedPtr::Ptr")
                 .field("ptr", &ptr)
                 .finish()
@@ -142,9 +153,10 @@ where
     }
 }
 
-impl<T, S> Drop for StuffedPtr<T, S>
+impl<T, S, I> Drop for StuffedPtr<T, S, I>
 where
-    S: StuffingStrategy,
+    S: StuffingStrategy<I>,
+    I: Backend<T>,
 {
     fn drop(&mut self) {
         if self.is_extra() {
@@ -157,10 +169,11 @@ where
     }
 }
 
-impl<T, S> Clone for StuffedPtr<T, S>
+impl<T, S, I> Clone for StuffedPtr<T, S, I>
 where
-    S: StuffingStrategy,
+    S: StuffingStrategy<I>,
     S::Extra: Clone,
+    I: Backend<T>,
 {
     fn clone(&self) -> Self {
         // SAFETY: We forget that `extra` ever existed after taking the reference and cloning it
@@ -175,10 +188,11 @@ where
     }
 }
 
-impl<T, S> PartialEq for StuffedPtr<T, S>
+impl<T, S, I> PartialEq for StuffedPtr<T, S, I>
 where
-    S: StuffingStrategy,
+    S: StuffingStrategy<I>,
     S::Extra: PartialEq,
+    I: Backend<T>,
 {
     fn eq(&self, other: &Self) -> bool {
         // SAFETY: We forget them after
@@ -203,16 +217,18 @@ where
     }
 }
 
-impl<T, S> Eq for StuffedPtr<T, S>
+impl<T, S, I> Eq for StuffedPtr<T, S, I>
 where
-    S: StuffingStrategy,
+    S: StuffingStrategy<I>,
     S::Extra: PartialEq + Eq,
+    I: Backend<T>,
 {
 }
 
-impl<T, S> From<Box<T>> for StuffedPtr<T, S>
+impl<T, S, I> From<Box<T>> for StuffedPtr<T, S, I>
 where
-    S: StuffingStrategy,
+    S: StuffingStrategy<I>,
+    I: Backend<T>,
 {
     fn from(boxed: Box<T>) -> Self {
         Self::new_ptr(Box::into_raw(boxed))
@@ -230,22 +246,22 @@ where
 ///
 /// For [`StuffingStrategy::stuff_ptr`] and [`StuffingStrategy::extract_ptr`],
 /// `ptr == extract_ptr(stuff_ptr(ptr))` *must* hold true.
-pub unsafe trait StuffingStrategy {
+pub unsafe trait StuffingStrategy<I> {
     /// The type of the extra.
     type Extra;
 
     /// Checks whether the `StufferPtr` data value contains an extra value. The result of this
     /// function can be trusted.
-    fn is_extra(data: usize) -> bool;
+    fn is_extra(data: I) -> bool;
 
     /// Stuff extra data into a usize that is then put into the pointer. This operation
     /// must be infallible.
-    fn stuff_extra(inner: Self::Extra) -> usize;
+    fn stuff_extra(inner: Self::Extra) -> I;
 
     /// Extract extra data from the data.
     /// # Safety
     /// `data` must contain data created by [`StuffingStrategy::stuff_extra`].
-    unsafe fn extract_extra(data: usize) -> Self::Extra;
+    unsafe fn extract_extra(data: I) -> Self::Extra;
 
     /// Stuff a pointer address into the pointer sized integer.
     ///
@@ -253,24 +269,12 @@ pub unsafe trait StuffingStrategy {
     /// cursed things with it.
     ///
     /// The default implementation just returns the address directly.
-    fn stuff_ptr(inner: usize) -> usize {
-        inner
-    }
+    fn stuff_ptr(addr: usize) -> I;
 
     /// Extract the pointer address from the data.
     ///
     /// This function expects `inner` to come directly from [`StuffingStrategy::stuff_ptr`].
-    ///
-    /// The default implementation just returns the value directly.
-    fn extract_ptr(inner: usize) -> usize {
-        inner
-    }
-}
-
-fn map_ptr<T>(ptr: *mut T, map: impl FnOnce(usize) -> usize) -> *mut T {
-    let int = Strict::addr(ptr);
-    let result = map(int);
-    Strict::with_addr(ptr, result)
+    fn extract_ptr(inner: I) -> usize;
 }
 
 #[cfg(test)]

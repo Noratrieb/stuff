@@ -4,7 +4,7 @@
 
 use crate::StuffingStrategy;
 
-unsafe impl StuffingStrategy for () {
+unsafe impl StuffingStrategy<usize> for () {
     type Extra = ();
 
     fn is_extra(_data: usize) -> bool {
@@ -16,6 +16,14 @@ unsafe impl StuffingStrategy for () {
     }
 
     unsafe fn extract_extra(_data: usize) -> Self::Extra {}
+
+    fn stuff_ptr(addr: usize) -> usize {
+        addr
+    }
+
+    fn extract_ptr(inner: usize) -> usize {
+        inner
+    }
 }
 
 #[cfg(test)]
@@ -26,7 +34,7 @@ pub(crate) mod test_strategies {
     macro_rules! impl_usize_max_zst {
         ($ty:ident) => {
             // this one lives in usize::MAX
-            unsafe impl StuffingStrategy for $ty {
+            unsafe impl StuffingStrategy<usize> for $ty {
                 type Extra = Self;
 
                 fn is_extra(data: usize) -> bool {
@@ -41,6 +49,14 @@ pub(crate) mod test_strategies {
 
                 unsafe fn extract_extra(_data: usize) -> Self::Extra {
                     $ty
+                }
+
+                fn stuff_ptr(addr: usize) -> usize {
+                    addr
+                }
+
+                fn extract_ptr(inner: usize) -> usize {
+                    inner
                 }
             }
         };
