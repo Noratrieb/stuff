@@ -147,7 +147,7 @@ impl_backend_2_tuple!(impl for u128 { (*mut T, u64), 64 });
 impl_backend_2_tuple!(impl for u64 { (*mut T, u32), 32 });
 
 #[cfg(target_pointer_width = "32")]
-impl_backend_3_tuple!(impl 128 u64 { (*mut T, u32, u64), 32, 64 });
+impl_backend_3_tuple!(impl for u128 { (*mut T, u32, u64), 32, 64 });
 
 #[cfg(target_pointer_width = "16")]
 impl_backend_3_tuple!(impl for u64 { (*mut T, u16, u32), 16, 32 });
