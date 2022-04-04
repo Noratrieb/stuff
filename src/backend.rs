@@ -1,17 +1,29 @@
-use sptr::Strict;
 use std::mem;
 
+use sptr::Strict;
+
+/// A backend where the stuffed pointer is stored. Must be bigger or equal to the pointer size.
 pub trait Backend<T> {
+    /// The underlying type where the data is stored. Often a tuple of a pointer (for the provenance)
+    /// and some integers to fill up the bytes.
     type Stored: Copy;
 
+    /// Get the pointer from the backed. Since the [`crate::StuffingStrategy`] is able to use the full
+    /// bytes to pack in the pointer address, the full address is returned in the second tuple field,
+    /// as the integer. The provenance of the pointer is returned as the first tuple field, but its
+    /// address should be ignored and may be invalid.
     fn get_ptr(s: Self::Stored) -> (*mut T, Self);
 
+    /// Set a new pointer address. The provenance of the new pointer is transferred in the first argument,
+    /// and the address in the second. See [`Backend::get_ptr`] for more details on the separation.
     fn set_ptr(provenance: *mut T, addr: Self) -> Self::Stored;
 
+    /// Get the integer value from the backend. Note that this *must not* be used to create a pointer,
+    /// for that use [`Backend::get_ptr`] to keep the provenance.
     fn get_int(s: Self::Stored) -> Self;
 }
 
-#[allow(clippy::should_assert_eq, dead_code)] // :/
+#[allow(dead_code)] // :/
 const fn assert_size<B>()
 where
     B: Backend<()>,

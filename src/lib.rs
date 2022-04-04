@@ -3,17 +3,27 @@
 #![warn(missing_docs)]
 
 //! A crate for stuffing things into a pointer.
+//!
+//! This crate consists of three parts:
+//! * The type [`StuffedPtr`]
+//! * The trait [`StuffingStrategy`]
+//! * The trait [`Backend`]
+//!
+//!
 
 mod backend;
-pub mod strategies;
+mod strategy;
 
-use std::fmt::{Debug, Formatter};
-use std::marker::PhantomData;
-use std::mem;
-use std::ops::Not;
+use std::{
+    fmt::{Debug, Formatter},
+    marker::PhantomData,
+    mem,
+    ops::Not,
+};
 
-use crate::backend::Backend;
 use sptr::Strict;
+
+pub use crate::{backend::Backend, strategy::StuffingStrategy};
 
 /// A union of a pointer and some extra data.
 pub struct StuffedPtr<T, S, I = usize>(I::Stored, PhantomData<S>)
@@ -235,148 +245,128 @@ where
     }
 }
 
-/// A trait that describes how to stuff extras and pointers into the pointer sized object.
-/// # Safety
-///
-/// If [`StuffingStrategy::is_extra`] returns true for a value, then
-/// [`StuffingStrategy::extract_extra`] *must* return a valid `Extra` for that same value.
-///
-/// [`StuffingStrategy::stuff_extra`] *must* consume `inner` and make sure that it's not dropped
-/// if it isn't `Copy`.
-///
-/// For [`StuffingStrategy::stuff_ptr`] and [`StuffingStrategy::extract_ptr`],
-/// `ptr == extract_ptr(stuff_ptr(ptr))` *must* hold true.
-pub unsafe trait StuffingStrategy<I> {
-    /// The type of the extra.
-    type Extra;
-
-    /// Checks whether the `StufferPtr` data value contains an extra value. The result of this
-    /// function can be trusted.
-    fn is_extra(data: I) -> bool;
-
-    /// Stuff extra data into a usize that is then put into the pointer. This operation
-    /// must be infallible.
-    fn stuff_extra(inner: Self::Extra) -> I;
-
-    /// Extract extra data from the data.
-    /// # Safety
-    /// `data` must contain data created by [`StuffingStrategy::stuff_extra`].
-    unsafe fn extract_extra(data: I) -> Self::Extra;
-
-    /// Stuff a pointer address into the pointer sized integer.
-    ///
-    /// This can be used to optimize away some of the unnecessary parts of the pointer or do other
-    /// cursed things with it.
-    ///
-    /// The default implementation just returns the address directly.
-    fn stuff_ptr(addr: usize) -> I;
-
-    /// Extract the pointer address from the data.
-    ///
-    /// This function expects `inner` to come directly from [`StuffingStrategy::stuff_ptr`].
-    fn extract_ptr(inner: I) -> usize;
-}
-
 #[cfg(test)]
 mod tests {
-    use crate::strategies::test_strategies::{EmptyInMax, HasDebug, PanicsInDrop};
-    use crate::StuffedPtr;
+    #![allow(non_snake_case)]
     use std::mem;
 
-    // note: the tests mostly use the `PanicsInDrop` type and strategy, to make sure that no
+    use paste::paste;
+
+    use crate::{
+        strategy::test_strategies::{EmptyInMax, HasDebug, PanicsInDrop},
+        StuffedPtr,
+    };
+
     // extra is ever dropped accidentally.
 
-    #[test]
-    fn set_get_ptr_no_extra() {
-        unsafe {
-            let boxed = Box::new(1);
-            let stuffed_ptr: StuffedPtr<i32, ()> = boxed.into();
-            let ptr = stuffed_ptr.get_ptr_unchecked();
-            let boxed = Box::from_raw(ptr);
-            assert_eq!(*boxed, 1);
-        }
+    // note: the tests mostly use the `PanicsInDrop` type and strategy, to make sure that no
+    macro_rules! make_tests {
+        ($backend:ident) => {
+            paste! {
+                #[test]
+                fn [<set_get_ptr_no_extra__ $backend>]() {
+                     unsafe {
+                        let boxed = Box::new(1);
+                        let stuffed_ptr: StuffedPtr<i32, (), $backend> = boxed.into();
+                        let ptr = stuffed_ptr.get_ptr_unchecked();
+                        let boxed = Box::from_raw(ptr);
+                        assert_eq!(*boxed, 1);
+                    }
+                }
+
+
+                #[test]
+                fn [<get_extra__ $backend>]() {
+                    let stuffed_ptr: StuffedPtr<(), EmptyInMax, $backend> = StuffedPtr::new_extra(EmptyInMax);
+                    assert!(stuffed_ptr.is_extra());
+                    assert!(matches!(stuffed_ptr.copy_extra(), Some(EmptyInMax)));
+                }
+
+                #[test]
+                fn [<debug__ $backend>]() {
+                    let boxed = Box::new(1);
+                    let stuffed_ptr: StuffedPtr<i32, HasDebug, $backend> = boxed.into();
+                    assert!(format!("{stuffed_ptr:?}").starts_with("StuffedPtr::Ptr {"));
+
+                    drop(unsafe { Box::from_raw(stuffed_ptr.get_ptr().unwrap()) });
+
+                    let extra = HasDebug;
+                    let stuffed_ptr: StuffedPtr<i32, HasDebug, $backend> = StuffedPtr::new_extra(extra);
+                    assert_eq!(
+                        format!("{stuffed_ptr:?}"),
+                        "StuffedPtr::Extra { extra: hello! }"
+                    );
+                }
+
+
+                #[test]
+                #[should_panic]
+                fn [<drop_extra_when_extra__ $backend>]() {
+                    let stuffed_ptr: StuffedPtr<(), PanicsInDrop, $backend> = StuffedPtr::new_extra(PanicsInDrop);
+                    // the panicking drop needs to be called here!
+                    drop(stuffed_ptr);
+                }
+
+
+                #[test]
+                #[allow(clippy::redundant_clone)]
+                fn [<clone__ $backend>]() {
+                    let mut unit = ();
+                    let stuffed_ptr1: StuffedPtr<(), PanicsInDrop, $backend> = StuffedPtr::new_ptr(&mut unit);
+                    let _ = stuffed_ptr1.clone();
+
+                    let stuffed_ptr1: StuffedPtr<(), PanicsInDrop, $backend> = StuffedPtr::new_extra(PanicsInDrop);
+                    let stuffed_ptr2 = stuffed_ptr1.clone();
+
+                    mem::forget((stuffed_ptr1, stuffed_ptr2));
+                }
+
+
+                #[test]
+                fn [<eq__ $backend>]() {
+                    // two pointers
+                    let mut unit = ();
+                    let stuffed_ptr1: StuffedPtr<(), PanicsInDrop, $backend> = StuffedPtr::new_ptr(&mut unit);
+                    let stuffed_ptr2: StuffedPtr<(), PanicsInDrop, $backend> = StuffedPtr::new_ptr(&mut unit);
+
+                    assert_eq!(stuffed_ptr1, stuffed_ptr2);
+
+                    let stuffed_ptr1: StuffedPtr<(), PanicsInDrop, $backend> = StuffedPtr::new_ptr(&mut unit);
+                    let stuffed_ptr2: StuffedPtr<(), PanicsInDrop, $backend> = StuffedPtr::new_extra(PanicsInDrop);
+
+                    assert_ne!(stuffed_ptr1, stuffed_ptr2);
+                    mem::forget(stuffed_ptr2);
+                }
+
+
+                #[test]
+                fn [<dont_drop_extra_when_pointer__ $backend>]() {
+                    let mut unit = ();
+                    let stuffed_ptr: StuffedPtr<(), PanicsInDrop, $backend> = StuffedPtr::new_ptr(&mut unit);
+                    // the panicking drop needs not to be called here!
+                    drop(stuffed_ptr);
+                }
+
+
+                #[test]
+                fn [<some_traits_dont_drop__ $backend>]() {
+                    // make sure that extra is never dropped twice
+
+                    let stuffed_ptr1: StuffedPtr<(), PanicsInDrop, $backend> = StuffedPtr::new_extra(PanicsInDrop);
+                    let stuffed_ptr2: StuffedPtr<(), PanicsInDrop, $backend> = StuffedPtr::new_extra(PanicsInDrop);
+
+                    // PartialEq
+                    assert_eq!(stuffed_ptr1, stuffed_ptr2);
+                    // Debug
+                    let _ = format!("{stuffed_ptr1:?}");
+
+                    mem::forget((stuffed_ptr1, stuffed_ptr2));
+                }
+            }
+        };
     }
 
-    #[test]
-    fn get_extra() {
-        let stuffed_ptr: StuffedPtr<(), EmptyInMax> = StuffedPtr::new_extra(EmptyInMax);
-        assert!(stuffed_ptr.is_extra());
-        assert!(matches!(stuffed_ptr.copy_extra(), Some(EmptyInMax)));
-    }
-
-    #[test]
-    fn debug() {
-        let boxed = Box::new(1);
-        let stuffed_ptr: StuffedPtr<i32, HasDebug> = boxed.into();
-        assert!(format!("{stuffed_ptr:?}").starts_with("StuffedPtr::Ptr {"));
-
-        drop(unsafe { Box::from_raw(stuffed_ptr.get_ptr().unwrap()) });
-
-        let extra = HasDebug;
-        let stuffed_ptr: StuffedPtr<i32, HasDebug> = StuffedPtr::new_extra(extra);
-        assert_eq!(
-            format!("{stuffed_ptr:?}"),
-            "StuffedPtr::Extra { extra: hello! }"
-        );
-    }
-
-    #[test]
-    #[should_panic]
-    fn drop_extra_when_extra() {
-        let stuffed_ptr: StuffedPtr<(), PanicsInDrop> = StuffedPtr::new_extra(PanicsInDrop);
-        // the panicking drop needs to be called here!
-        drop(stuffed_ptr);
-    }
-
-    #[test]
-    #[allow(clippy::redundant_clone)]
-    fn clone() {
-        let mut unit = ();
-        let stuffed_ptr1: StuffedPtr<(), PanicsInDrop> = StuffedPtr::new_ptr(&mut unit);
-        let _ = stuffed_ptr1.clone();
-
-        let stuffed_ptr1: StuffedPtr<(), PanicsInDrop> = StuffedPtr::new_extra(PanicsInDrop);
-        let stuffed_ptr2 = stuffed_ptr1.clone();
-
-        mem::forget((stuffed_ptr1, stuffed_ptr2));
-    }
-
-    #[test]
-    fn eq() {
-        // two pointers
-        let mut unit = ();
-        let stuffed_ptr1: StuffedPtr<(), PanicsInDrop> = StuffedPtr::new_ptr(&mut unit);
-        let stuffed_ptr2: StuffedPtr<(), PanicsInDrop> = StuffedPtr::new_ptr(&mut unit);
-
-        assert_eq!(stuffed_ptr1, stuffed_ptr2);
-
-        let stuffed_ptr1: StuffedPtr<(), PanicsInDrop> = StuffedPtr::new_ptr(&mut unit);
-        let stuffed_ptr2: StuffedPtr<(), PanicsInDrop> = StuffedPtr::new_extra(PanicsInDrop);
-
-        assert_ne!(stuffed_ptr1, stuffed_ptr2);
-        mem::forget(stuffed_ptr2);
-    }
-
-    #[test]
-    fn dont_drop_extra_when_pointer() {
-        let mut unit = ();
-        let stuffed_ptr: StuffedPtr<(), PanicsInDrop> = StuffedPtr::new_ptr(&mut unit);
-        // the panicking drop needs not to be called here!
-        drop(stuffed_ptr);
-    }
-
-    #[test]
-    fn some_traits_dont_drop() {
-        // make sure that extra is never dropped twice
-
-        let stuffed_ptr1: StuffedPtr<(), PanicsInDrop> = StuffedPtr::new_extra(PanicsInDrop);
-        let stuffed_ptr2: StuffedPtr<(), PanicsInDrop> = StuffedPtr::new_extra(PanicsInDrop);
-
-        // PartialEq
-        assert_eq!(stuffed_ptr1, stuffed_ptr2);
-        // Debug
-        let _ = format!("{stuffed_ptr1:?}");
-
-        mem::forget((stuffed_ptr1, stuffed_ptr2));
-    }
+    make_tests!(u128);
+    make_tests!(u64);
+    make_tests!(usize);
 }

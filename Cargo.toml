@@ -7,3 +7,6 @@ edition = "2021"
 
 [dependencies]
 sptr = "0.2.3"
+
+[dev-dependencies]
+paste = "1.0.7"
