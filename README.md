@@ -32,7 +32,7 @@ See [crafting interpreters](https://craftinginterpreters.com/optimization.html#n
 for more details.
 ```rust
 use std::collections::HashMap;
-use ptr_stuff::{StuffedPtr, StuffingStrategy};
+use stuff::{StuffedPtr, StuffingStrategy};
 
 // Create a unit struct for our strategy
 struct NanBoxStrategy;
