@@ -1,7 +1,8 @@
 # stuff
 
-![crates.io](https://img.shields.io/crates/v/stuff.svg) 
-![action checks](https://img.shields.io/github/checks-status/Nilstrieb/stuff/main.svg)
+[![crates.io](https://img.shields.io/crates/v/stuff.svg)](https://crates.io/crates/stuff)
+[![docs.rs](https://img.shields.io/docsrs/stuff)](https://docs.rs/stuff)
+![Build Status](https://img.shields.io/endpoint.svg?url=https%3A%2F%2Factions-badge.atrox.dev%2FNilstrieb%2Fstuff%2Fbadge%3Fref%3Dmain&style=flat)
 
 A crate for stuffing things into a pointer.
 
