@@ -4,8 +4,8 @@ use sptr::Strict;
 
 /// A backend where the stuffed pointer is stored. Must be bigger or equal to the pointer size.
 ///
-/// The [`Backend`] is a trait to define types that store the stuffed pointer. It's supposed to
-/// be implemented on `Copy` types like `usize``u64`, `u128`. Note that these integers are basically
+/// The `Backend` is a trait to define types that store the stuffed pointer. It's supposed to
+/// be implemented on `Copy` types like `usize`, `u64`, or `u128`. Note that these integers are basically
 /// just the strategy and exchange types for addresses, but *not* the actual underlying storage, which
 /// always contains a pointer to keep provenance (for example `(*mut T, u32)` on 32 bit for `u64`).
 ///
@@ -21,10 +21,10 @@ pub unsafe trait Backend<T> {
     /// and some integers to fill up the bytes.
     type Stored: Copy;
 
-    /// Get the pointer from the backed. Since the [`crate::StuffingStrategy`] is able to use the full
-    /// bytes to pack in the pointer address, the full address is returned in the second tuple field,
-    /// as the integer. The provenance of the pointer is returned as the first tuple field, but its
-    /// address should be ignored and may be invalid.
+    /// Get the pointer from the backed. Since the [`StuffingStrategy`](`crate::StuffingStrategy`)
+    /// is able to use the full bytes to pack in the pointer address, the full address is returned
+    /// in the second tuple field, as the integer. The provenance of the pointer is returned as
+    /// the first tuple field, but its address should be ignored and may be invalid.
     fn get_ptr(s: Self::Stored) -> (*mut T, Self);
 
     /// Set a new pointer address. The provenance of the new pointer is transferred in the first argument,

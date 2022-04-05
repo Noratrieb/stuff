@@ -5,18 +5,20 @@
 
 //! A crate for stuffing things into a pointer.
 //!
-//! This crate consists of three parts:
-//! * The type [`StuffedPtr`]
-//! * The trait [`StuffingStrategy`]
-//! * The trait [`Backend`]
+//! `stuff` helps you to
+//!
+//! - Stuff arbitrary data into pointers
+//! - Stuff pointers or arbitrary data into fixed size storage (u64, u128)
+//!
+//! in a **portable and provenance friendly** way.
 //!
 //! [`StuffedPtr`] is the main type of this crate. You it's a type whose size depends on the
 //! choice of [`Backend`] (defaults to `usize`, `u64` and `u128` are also possible). It can store a
 //! pointer or some extra data.
 //!
-//! except that the extra data is bitstuffed into the pointer. You can chose any arbitrary bitstuffing
-//! depending on the [`StuffingStrategy`], an unsafe trait that governs how the extra data
-//! (or the pointer itself) will be packed into the backend.
+//! You can choose any arbitrary bitstuffing depending on the [`StuffingStrategy`], an unsafe trait that governs
+//! how the extra data (or the pointer itself) will be packed into the backend. While this trait is still unsafe,
+//! it's a lot safer than doing everything by hand.
 //!
 //! # Example: NaN-Boxing
 //! Pointers are hidden in the NaN values of floats. NaN boxing often involves also hiding booleans
@@ -99,29 +101,37 @@ use sptr::Strict;
 
 pub use crate::{backend::Backend, strategy::StuffingStrategy};
 
-/// A union of a pointer and some extra data, bitpacked into a pointer (or custom, using the third
-/// generic param `I`) size.
+/// A union of a pointer or some extra data, bitpacked into a value with the size depending on
+/// `B`. It defaults to `usize`, meaning pointer sized, but `u64` and `u128` are also provided
+/// by this crate. You can also provide your own [`Backend`] implementation
+///
+/// The stuffing strategy is supplied as the second generic parameter `S`.
+///
+/// The first generic parameter `T` is the type that the pointer is pointing to.
 ///
 /// For a usage example, view the crate level documentation.
 ///
 /// This pointer does *not* drop extra data, [`StuffedPtr::into_extra`] can be used if that is required.
 ///
 /// `StuffedPtr` implements most traits like `Clone`, `PartialEq` or `Copy` if the extra type does.
-pub struct StuffedPtr<T, S, I = usize>(I::Stored, PhantomData<S>)
+///
+/// This type is guaranteed to be `#[repr(transparent)]` to a `B::Stored`.
+#[repr(transparent)]
+pub struct StuffedPtr<T, S, B = usize>(B::Stored, PhantomData<S>)
 where
-    S: StuffingStrategy<I>,
-    I: Backend<T>;
+    S: StuffingStrategy<B>,
+    B: Backend<T>;
 
-impl<T, S, I> StuffedPtr<T, S, I>
+impl<T, S, B> StuffedPtr<T, S, B>
 where
-    S: StuffingStrategy<I>,
-    I: Backend<T>,
+    S: StuffingStrategy<B>,
+    B: Backend<T>,
 {
     /// Create a new `StuffedPtr` from a pointer
     pub fn new_ptr(ptr: *mut T) -> Self {
         let addr = Strict::addr(ptr);
         let stuffed = S::stuff_ptr(addr);
-        Self(I::set_ptr(ptr, stuffed), PhantomData)
+        Self(B::set_ptr(ptr, stuffed), PhantomData)
     }
 
     /// Create a new `StuffPtr` from extra data
@@ -130,7 +140,7 @@ where
         // if the user calls `set_ptr` it will use the new provenance from that ptr
         let ptr = core::ptr::null_mut();
         let extra = S::stuff_extra(extra);
-        Self(I::set_ptr(ptr, extra), PhantomData)
+        Self(B::set_ptr(ptr, extra), PhantomData)
     }
 
     /// Get the pointer data, or `None` if it contains extra data
@@ -147,7 +157,7 @@ where
     /// # Safety
     /// `StuffedPtr` must contain pointer data and not extra data
     pub unsafe fn get_ptr_unchecked(&self) -> *mut T {
-        let (provenance, addr) = I::get_ptr(self.0);
+        let (provenance, addr) = B::get_ptr(self.0);
         let addr = S::extract_ptr(addr);
         Strict::with_addr(provenance, addr)
     }
@@ -189,8 +199,8 @@ where
         unsafe { S::extract_extra(data) }
     }
 
-    fn addr(&self) -> I {
-        I::get_int(self.0)
+    fn addr(&self) -> B {
+        B::get_int(self.0)
     }
 
     fn is_extra(&self) -> bool {
@@ -198,11 +208,12 @@ where
     }
 }
 
-impl<T, S, I> StuffedPtr<T, S, I>
+/// Extra implementations if the extra type is `Copy`
+impl<T, S, B> StuffedPtr<T, S, B>
 where
-    S: StuffingStrategy<I>,
+    S: StuffingStrategy<B>,
     S::Extra: Copy,
-    I: Backend<T>,
+    B: Backend<T>,
 {
     /// Get extra data from this, or `None` if it's pointer data
     pub fn copy_extra(&self) -> Option<S::Extra> {
@@ -219,11 +230,11 @@ where
     }
 }
 
-impl<T, S, I> Debug for StuffedPtr<T, S, I>
+impl<T, S, B> Debug for StuffedPtr<T, S, B>
 where
-    S: StuffingStrategy<I>,
+    S: StuffingStrategy<B>,
     S::Extra: Debug,
-    I: Backend<T>,
+    B: Backend<T>,
 {
     fn fmt(&self, f: &mut Formatter<'_>) -> core::fmt::Result {
         // SAFETY:
@@ -246,11 +257,11 @@ where
     }
 }
 
-impl<T, S, I> Clone for StuffedPtr<T, S, I>
+impl<T, S, B> Clone for StuffedPtr<T, S, B>
 where
-    S: StuffingStrategy<I>,
+    S: StuffingStrategy<B>,
     S::Extra: Clone,
-    I: Backend<T>,
+    B: Backend<T>,
 {
     fn clone(&self) -> Self {
         // SAFETY: We forget that `extra` ever existed after taking the reference and cloning it
@@ -265,19 +276,19 @@ where
     }
 }
 
-impl<T, S, I> Copy for StuffedPtr<T, S, I>
+impl<T, S, B> Copy for StuffedPtr<T, S, B>
 where
-    S: StuffingStrategy<I>,
+    S: StuffingStrategy<B>,
     S::Extra: Copy,
-    I: Backend<T>,
+    B: Backend<T>,
 {
 }
 
-impl<T, S, I> PartialEq for StuffedPtr<T, S, I>
+impl<T, S, B> PartialEq for StuffedPtr<T, S, B>
 where
-    S: StuffingStrategy<I>,
+    S: StuffingStrategy<B>,
     S::Extra: PartialEq,
-    I: Backend<T>,
+    B: Backend<T>,
 {
     fn eq(&self, other: &Self) -> bool {
         // SAFETY: We forget them after
@@ -302,19 +313,19 @@ where
     }
 }
 
-impl<T, S, I> Eq for StuffedPtr<T, S, I>
+impl<T, S, B> Eq for StuffedPtr<T, S, B>
 where
-    S: StuffingStrategy<I>,
+    S: StuffingStrategy<B>,
     S::Extra: PartialEq + Eq,
-    I: Backend<T>,
+    B: Backend<T>,
 {
 }
 
-impl<T, S, I> Hash for StuffedPtr<T, S, I>
+impl<T, S, B> Hash for StuffedPtr<T, S, B>
 where
-    S: StuffingStrategy<I>,
+    S: StuffingStrategy<B>,
     S::Extra: Hash,
-    I: Backend<T>,
+    B: Backend<T>,
 {
     fn hash<H: Hasher>(&self, state: &mut H) {
         // SAFETY: We forget that `extra` ever existed after taking the reference and cloning it
@@ -346,10 +357,10 @@ mod tests {
     // note: the tests mostly use the `PanicsInDrop` type and strategy, to make sure that no
     // extra is ever dropped accidentally.
 
-    fn from_box<T, S, I>(boxed: Box<T>) -> StuffedPtr<T, S, I>
+    fn from_box<T, S, B>(boxed: Box<T>) -> StuffedPtr<T, S, B>
     where
-        S: StuffingStrategy<I>,
-        I: Backend<T>,
+        S: StuffingStrategy<B>,
+        B: Backend<T>,
     {
         StuffedPtr::new_ptr(Box::into_raw(boxed))
     }

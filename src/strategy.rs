@@ -5,6 +5,8 @@
 /// it's also completely possible to implement it on the type in [`StuffingStrategy::Extra`] directly
 /// if possible.
 ///
+/// The generic parameter `B` stands for the [`Backend`](`crate::Backend`) used by the strategy.
+///
 /// # Safety
 ///
 /// If [`StuffingStrategy::is_extra`] returns true for a value, then
@@ -15,22 +17,22 @@
 ///
 /// For [`StuffingStrategy::stuff_ptr`] and [`StuffingStrategy::extract_ptr`],
 /// `ptr == extract_ptr(stuff_ptr(ptr))` *must* hold true.
-pub unsafe trait StuffingStrategy<I> {
+pub unsafe trait StuffingStrategy<B> {
     /// The type of the extra.
     type Extra;
 
     /// Checks whether the `StufferPtr` data value contains an extra value. The result of this
     /// function can be trusted.
-    fn is_extra(data: I) -> bool;
+    fn is_extra(data: B) -> bool;
 
     /// Stuff extra data into a usize that is then put into the pointer. This operation
     /// must be infallible.
-    fn stuff_extra(inner: Self::Extra) -> I;
+    fn stuff_extra(inner: Self::Extra) -> B;
 
     /// Extract extra data from the data.
     /// # Safety
     /// `data` must contain data created by [`StuffingStrategy::stuff_extra`].
-    unsafe fn extract_extra(data: I) -> Self::Extra;
+    unsafe fn extract_extra(data: B) -> Self::Extra;
 
     /// Stuff a pointer address into the pointer sized integer.
     ///
@@ -38,12 +40,12 @@ pub unsafe trait StuffingStrategy<I> {
     /// cursed things with it.
     ///
     /// The default implementation just returns the address directly.
-    fn stuff_ptr(addr: usize) -> I;
+    fn stuff_ptr(addr: usize) -> B;
 
     /// Extract the pointer address from the data.
     ///
     /// This function expects `inner` to come directly from [`StuffingStrategy::stuff_ptr`].
-    fn extract_ptr(inner: I) -> usize;
+    fn extract_ptr(inner: B) -> usize;
 }
 
 unsafe impl StuffingStrategy<usize> for () {

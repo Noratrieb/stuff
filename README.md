@@ -7,24 +7,32 @@ A crate for stuffing things into a pointer.
 
 This crate is tested using miri (with `-Zmiri-tag-raw-pointers`).
 
-This crate consists of three parts:
-* The type `StuffedPtr`
-* The trait `StuffingStrategy`
-* The trait `Backend`
-`StuffedPtr` is the main type of this crate. You it's a type whose size depends on the
+`stuff` helps you to
+
+- Stuff arbitrary data into pointers
+- Stuff pointers or arbitrary data into fixed size storage (u64, u128)
+
+in a **portable and provenance friendly** way.
+ 
+It does by providing an abstraction around it, completely abstracting away the provenance and pointers from
+the user, allowing the user to do their bit stuffing only on integers (pointer addresses) themselves.
+
+`StuffedPtr` is the main type of this crate. It's a type whose size depends on the
 choice of `Backend` (defaults to `usize`, `u64` and `u128` are also possible). It can store a
 pointer or some extra data.
 
-except that the extra data is bitstuffed into the pointer. You can chose any arbitrary bitstuffing
-depending on the `StuffingStrategy`, an unsafe trait that governs how the extra data
-(or the pointer itself) will be packed into the backend.
+You can choose any arbitrary bitstuffing depending on the `StuffingStrategy`, an unsafe trait that governs 
+how the extra data (or the pointer itself) will be packed into the backend. While this trait is still unsafe,
+it's a lot safer than doing everything by hand.
 
 # Example: NaN-Boxing
 Pointers are hidden in the NaN values of floats. NaN boxing often involves also hiding booleans
 or null in there, but we stay with floats and pointers (pointers to a `HashMap` that servers
 as our "object" type).
+
 See [crafting interpreters](https://craftinginterpreters.com/optimization.html#nan-boxing)
 for more details.
+
 ```rust
 use std::collections::HashMap;
 use stuff::{StuffedPtr, StuffingStrategy};
