@@ -89,9 +89,9 @@ extern crate alloc; // we want that for tests so we can use `Box`
 mod backend;
 mod strategy;
 
-use core::hash::{Hash, Hasher};
 use core::{
     fmt::{Debug, Formatter},
+    hash::{Hash, Hasher},
     marker::PhantomData,
     mem,
     ops::Not,

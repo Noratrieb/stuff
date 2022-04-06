@@ -36,16 +36,20 @@ pub unsafe trait Backend<T> {
     fn get_int(s: Self::Stored) -> Self;
 }
 
-#[allow(dead_code)] // :/
-const fn assert_same_size<A, B>() {
-    let has_equal_size = mem::size_of::<A>() == mem::size_of::<B>();
-    assert!(has_equal_size);
-}
+#[cfg(test)] // todo: this mustn't affect the msrv, fix this later
+mod backend_size_asserts {
 
-#[cfg(not(target_pointer_width = "16"))]
-const _: () = assert_same_size::<u128, <u128 as Backend<()>>::Stored>();
-const _: () = assert_same_size::<u64, <u64 as Backend<()>>::Stored>();
-const _: () = assert_same_size::<usize, <usize as Backend<()>>::Stored>();
+    #[allow(dead_code)] // :/
+    const fn assert_same_size<A, B>() {
+        let has_equal_size = mem::size_of::<A>() == mem::size_of::<B>();
+        assert!(has_equal_size);
+    }
+
+    #[cfg(not(target_pointer_width = "16"))]
+    const _: () = assert_same_size::<u128, <u128 as Backend<()>>::Stored>();
+    const _: () = assert_same_size::<u64, <u64 as Backend<()>>::Stored>();
+    const _: () = assert_same_size::<usize, <usize as Backend<()>>::Stored>();
+}
 
 unsafe impl<T> Backend<T> for usize {
     type Stored = *mut T;
