@@ -91,7 +91,6 @@ mod backend;
 mod strategy;
 
 use core::{
-	convert::TryFrom,
     fmt::{Debug, Formatter},
     hash::{Hash, Hasher},
     marker::PhantomData,
