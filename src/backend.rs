@@ -36,9 +36,9 @@ pub unsafe trait Backend<T> {
 
 #[cfg(test)] // todo: this mustn't affect the msrv, fix this later
 mod backend_size_asserts {
-	use core::mem;
+    use core::mem;
 
-	use super::Backend;
+    use super::Backend;
 
     #[allow(dead_code)] // :/
     const fn assert_same_size<A, B>() {
