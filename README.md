@@ -96,4 +96,5 @@ fn main() {
 ```
 
 # MSRV-Policy
-`stuff`s current MSRV is `1.31.1`, and this version will not get raised unless absolutely necessary.
+`stuff`s current MSRV is `1.34.2`. This version *can* get increased in a non-breaking change, but such changes
+are avoided unless necessary. Features requiring a newer Rust version might get gated behind optional features in the futurey.
