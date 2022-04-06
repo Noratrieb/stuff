@@ -20,10 +20,10 @@ the user, allowing the user to do their bit stuffing only on integers (pointer a
 
 `StuffedPtr` is the main type of this crate. It's a type whose size depends on the
 choice of `Backend` (defaults to `usize`, `u64` and `u128` are also possible). It can store a
-pointer or some extra data.
+pointer or some `other` data.
 
 You can choose any arbitrary bitstuffing depending on the `StuffingStrategy`, an unsafe trait that governs 
-how the extra data (or the pointer itself) will be packed into the backend. While this trait is still unsafe,
+how the `other` data (or the pointer itself) will be packed into the backend. While this trait is still unsafe,
 it's a lot safer than doing everything by hand.
 
 # Example: NaN-Boxing
@@ -36,59 +36,62 @@ for more details.
 
 ```rust
 use std::collections::HashMap;
+
 use stuff::{StuffedPtr, StuffingStrategy};
 
 // Create a unit struct for our strategy
 struct NanBoxStrategy;
 
-const QNAN: u64 = 0x7ffc000000000000; // implementation detail of NaN boxing, a quiet NaN mask
-
-const SIGN_BIT: u64 = 0x8000000000000000; // implementation detail of NaN boxing, the sign bit of an f64
+// implementation detail of NaN boxing, a quiet NaN mask
+const QNAN: u64 = 0x7ffc000000000000; 
+// implementation detail of NaN boxing, the sign bit of an f64
+const SIGN_BIT: u64 = 0x8000000000000000; 
 
 unsafe impl StuffingStrategy<u64> for NanBoxStrategy {
-    type Extra = f64;
-    
-    fn is_extra(data: u64) -> bool {
+    type Other = f64;
+
+    fn is_other(data: u64) -> bool {
         (data & QNAN) != QNAN
     }
-    
-    fn stuff_extra(inner: Self::Extra) -> u64 {
+
+    fn stuff_other(inner: Self::Other) -> u64 {
         unsafe { std::mem::transmute(inner) } // both are 64 bit POD's
     }
-    
-    unsafe fn extract_extra(data: u64) -> Self::Extra {
+
+    unsafe fn extract_other(data: u64) -> Self::Other {
         std::mem::transmute(data) // both are 64 bit POD's
     }
-    
+
     fn stuff_ptr(addr: usize) -> u64 {
         // add the QNAN and SIGN_BIT
         SIGN_BIT | QNAN | u64::try_from(addr).unwrap()
     }
-    
+
     fn extract_ptr(inner: u64) -> usize {
         // keep everything except for QNAN and SIGN_BIT
         (inner & !(SIGN_BIT | QNAN)).try_into().unwrap()
     }
 }
 
-type Object = HashMap<String, u32>; // a very, very crude representation of an object
+// a very, very crude representation of an object
+type Object = HashMap<String, u32>;
 
-type Value = StuffedPtr<Object, NanBoxStrategy, u64>; // our value type
+// our value type
+type Value = StuffedPtr<Object, NanBoxStrategy, u64>;
 
 fn main() {
-    let float: Value = StuffedPtr::new_extra(123.5);
-    assert_eq!(float.copy_extra(), Some(123.5));
-    
+    let float: Value = StuffedPtr::new_other(123.5);
+    assert_eq!(float.copy_other(), Some(123.5));
+
     let object: Object = HashMap::from([("a".to_owned(), 457)]);
-    
     let boxed = Box::new(object);
     let ptr: Value = StuffedPtr::new_ptr(Box::into_raw(boxed));
-    
+
     let object = unsafe { &*ptr.get_ptr().unwrap() };
     assert_eq!(object.get("a"), Some(&457));
-    
+
     drop(unsafe { Box::from_raw(ptr.get_ptr().unwrap()) });
-    // `ptr` is a dangling pointer now!
+    // be careful, `ptr` is a dangling pointer now!
 }
 ```
 

@@ -1,38 +1,38 @@
-/// A trait that describes how to stuff extras and pointers into the pointer sized object.
+/// A trait that describes how to stuff others and pointers into the pointer sized object.
 ///
 /// This trait is what a user of this crate is expected to implement to use the crate for their own
 /// pointer stuffing. It's usually implemented on ZSTs that only serve as stuffing strategies, but
-/// it's also completely possible to implement it on the type in [`StuffingStrategy::Extra`] directly
+/// it's also completely possible to implement it on the type in [`StuffingStrategy::Other`] directly
 /// if possible.
 ///
 /// The generic parameter `B` stands for the [`Backend`](`crate::Backend`) used by the strategy.
 ///
 /// # Safety
 ///
-/// If [`StuffingStrategy::is_extra`] returns true for a value, then
-/// [`StuffingStrategy::extract_extra`] *must* return a valid `Extra` for that same value.
+/// If [`StuffingStrategy::is_other`] returns true for a value, then
+/// [`StuffingStrategy::extract_other`] *must* return a valid `Other` for that same value.
 ///
-/// [`StuffingStrategy::stuff_extra`] *must* consume `inner` and make sure that it's not dropped
+/// [`StuffingStrategy::stuff_other`] *must* consume `inner` and make sure that it's not dropped
 /// if it isn't `Copy`.
 ///
 /// For [`StuffingStrategy::stuff_ptr`] and [`StuffingStrategy::extract_ptr`],
 /// `ptr == extract_ptr(stuff_ptr(ptr))` *must* hold true.
 pub unsafe trait StuffingStrategy<B> {
-    /// The type of the extra.
-    type Extra;
+    /// The type of the other.
+    type Other;
 
-    /// Checks whether the `StufferPtr` data value contains an extra value. The result of this
+    /// Checks whether the `StufferPtr` data value contains an other value. The result of this
     /// function can be trusted.
-    fn is_extra(data: B) -> bool;
+    fn is_other(data: B) -> bool;
 
-    /// Stuff extra data into a usize that is then put into the pointer. This operation
+    /// Stuff other data into a usize that is then put into the pointer. This operation
     /// must be infallible.
-    fn stuff_extra(inner: Self::Extra) -> B;
+    fn stuff_other(inner: Self::Other) -> B;
 
-    /// Extract extra data from the data.
+    /// Extract other data from the data.
     /// # Safety
-    /// `data` must contain data created by [`StuffingStrategy::stuff_extra`].
-    unsafe fn extract_extra(data: B) -> Self::Extra;
+    /// `data` must contain data created by [`StuffingStrategy::stuff_other`].
+    unsafe fn extract_other(data: B) -> Self::Other;
 
     /// Stuff a pointer address into the pointer sized integer.
     ///
@@ -49,17 +49,17 @@ pub unsafe trait StuffingStrategy<B> {
 }
 
 unsafe impl StuffingStrategy<usize> for () {
-    type Extra = ();
+    type Other = ();
 
-    fn is_extra(_data: usize) -> bool {
+    fn is_other(_data: usize) -> bool {
         false
     }
 
-    fn stuff_extra(_inner: Self::Extra) -> usize {
+    fn stuff_other(_inner: Self::Other) -> usize {
         0
     }
 
-    unsafe fn extract_extra(_data: usize) -> Self::Extra {}
+    unsafe fn extract_other(_data: usize) -> Self::Other {}
 
     fn stuff_ptr(addr: usize) -> usize {
         addr
@@ -71,17 +71,17 @@ unsafe impl StuffingStrategy<usize> for () {
 }
 
 unsafe impl StuffingStrategy<u64> for () {
-    type Extra = ();
+    type Other = ();
 
-    fn is_extra(_data: u64) -> bool {
+    fn is_other(_data: u64) -> bool {
         false
     }
 
-    fn stuff_extra(_inner: Self::Extra) -> u64 {
+    fn stuff_other(_inner: Self::Other) -> u64 {
         0
     }
 
-    unsafe fn extract_extra(_data: u64) -> Self::Extra {}
+    unsafe fn extract_other(_data: u64) -> Self::Other {}
 
     fn stuff_ptr(addr: usize) -> u64 {
         addr as u64
@@ -93,17 +93,17 @@ unsafe impl StuffingStrategy<u64> for () {
 }
 
 unsafe impl StuffingStrategy<u128> for () {
-    type Extra = ();
+    type Other = ();
 
-    fn is_extra(_data: u128) -> bool {
+    fn is_other(_data: u128) -> bool {
         false
     }
 
-    fn stuff_extra(_inner: Self::Extra) -> u128 {
+    fn stuff_other(_inner: Self::Other) -> u128 {
         0
     }
 
-    unsafe fn extract_extra(_data: u128) -> Self::Extra {}
+    unsafe fn extract_other(_data: u128) -> Self::Other {}
 
     fn stuff_ptr(addr: usize) -> u128 {
         addr as u128
@@ -124,19 +124,19 @@ pub(crate) mod test_strategies {
         ($ty:ident) => {
             // this one lives in usize::MAX
             unsafe impl StuffingStrategy<usize> for $ty {
-                type Extra = Self;
+                type Other = Self;
 
-                fn is_extra(data: usize) -> bool {
+                fn is_other(data: usize) -> bool {
                     data == usize::MAX
                 }
 
                 #[allow(clippy::forget_copy)]
-                fn stuff_extra(inner: Self::Extra) -> usize {
+                fn stuff_other(inner: Self::Other) -> usize {
                     core::mem::forget(inner);
                     usize::MAX
                 }
 
-                unsafe fn extract_extra(_data: usize) -> Self::Extra {
+                unsafe fn extract_other(_data: usize) -> Self::Other {
                     $ty
                 }
 
@@ -149,19 +149,19 @@ pub(crate) mod test_strategies {
                 }
             }
             unsafe impl StuffingStrategy<u64> for $ty {
-                type Extra = Self;
+                type Other = Self;
 
-                fn is_extra(data: u64) -> bool {
+                fn is_other(data: u64) -> bool {
                     data == u64::MAX
                 }
 
                 #[allow(clippy::forget_copy)]
-                fn stuff_extra(inner: Self::Extra) -> u64 {
+                fn stuff_other(inner: Self::Other) -> u64 {
                     core::mem::forget(inner);
                     u64::MAX
                 }
 
-                unsafe fn extract_extra(_data: u64) -> Self::Extra {
+                unsafe fn extract_other(_data: u64) -> Self::Other {
                     $ty
                 }
 
@@ -175,19 +175,19 @@ pub(crate) mod test_strategies {
             }
 
             unsafe impl StuffingStrategy<u128> for $ty {
-                type Extra = Self;
+                type Other = Self;
 
-                fn is_extra(data: u128) -> bool {
+                fn is_other(data: u128) -> bool {
                     data == u128::MAX
                 }
 
                 #[allow(clippy::forget_copy)]
-                fn stuff_extra(inner: Self::Extra) -> u128 {
+                fn stuff_other(inner: Self::Other) -> u128 {
                     core::mem::forget(inner);
                     u128::MAX
                 }
 
-                unsafe fn extract_extra(_data: u128) -> Self::Extra {
+                unsafe fn extract_other(_data: u128) -> Self::Other {
                     $ty
                 }
 
