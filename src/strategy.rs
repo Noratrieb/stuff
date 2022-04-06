@@ -1,3 +1,7 @@
+use core::convert::TryInto;
+
+use crate::Backend;
+
 /// A trait that describes how to stuff others and pointers into the pointer sized object.
 ///
 /// This trait is what a user of this crate is expected to implement to use the crate for their own
@@ -48,69 +52,33 @@ pub unsafe trait StuffingStrategy<B> {
     fn extract_ptr(inner: B) -> usize;
 }
 
-unsafe impl StuffingStrategy<usize> for () {
+unsafe impl<B> StuffingStrategy<B> for ()
+where
+    B: Backend<()> + Default + TryInto<usize>,
+    usize: TryInto<B>,
+{
     type Other = ();
 
-    fn is_other(_data: usize) -> bool {
+    fn is_other(_data: B) -> bool {
         false
     }
 
-    fn stuff_other(_inner: Self::Other) -> usize {
-        0
+    fn stuff_other(_inner: Self::Other) -> B {
+        B::default()
     }
 
-    unsafe fn extract_other(_data: usize) -> Self::Other {}
+    unsafe fn extract_other(_data: B) -> Self::Other {}
 
-    fn stuff_ptr(addr: usize) -> usize {
-        addr
+    fn stuff_ptr(addr: usize) -> B {
+        addr.try_into()
+            .unwrap_or_else(|_| panic!("Address in `stuff_ptr` too big"))
     }
 
-    fn extract_ptr(inner: usize) -> usize {
+    fn extract_ptr(inner: B) -> usize {
         inner
-    }
-}
-
-unsafe impl StuffingStrategy<u64> for () {
-    type Other = ();
-
-    fn is_other(_data: u64) -> bool {
-        false
-    }
-
-    fn stuff_other(_inner: Self::Other) -> u64 {
-        0
-    }
-
-    unsafe fn extract_other(_data: u64) -> Self::Other {}
-
-    fn stuff_ptr(addr: usize) -> u64 {
-        addr as u64
-    }
-
-    fn extract_ptr(inner: u64) -> usize {
-        inner as usize
-    }
-}
-
-unsafe impl StuffingStrategy<u128> for () {
-    type Other = ();
-
-    fn is_other(_data: u128) -> bool {
-        false
-    }
-
-    fn stuff_other(_inner: Self::Other) -> u128 {
-        0
-    }
-
-    unsafe fn extract_other(_data: u128) -> Self::Other {}
-
-    fn stuff_ptr(addr: usize) -> u128 {
-        addr as u128
-    }
-
-    fn extract_ptr(inner: u128) -> usize {
-        inner as usize
+            .try_into()
+            // note: this can't happen 🤔
+            .unwrap_or_else(|_| panic!("Pointer value too big for usize"))
     }
 }
 
