@@ -1,6 +1,6 @@
 #![no_std]
 #![warn(rust_2018_idioms)]
-#![cfg_attr(test, deny(unsafe_op_in_unsafe_fn))] // this is great, but MSRV :(
+#![deny(unsafe_op_in_unsafe_fn)]
 #![warn(missing_docs)]
 
 //! A crate for stuffing things into a pointer.
