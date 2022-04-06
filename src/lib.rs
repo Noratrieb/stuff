@@ -1,6 +1,5 @@
 #![no_std]
 #![warn(rust_2018_idioms)]
-#![deny(unsafe_op_in_unsafe_fn)]
 #![warn(missing_docs)]
 
 //! A crate for stuffing things into a pointer.
@@ -146,10 +145,13 @@ where
 
     /// Get the pointer data, or `None` if it contains extra data
     pub fn get_ptr(&self) -> Option<*mut T> {
-        self.is_extra().not().then(|| {
-            // SAFETY: We have done a check that it's not extra
-            unsafe { self.get_ptr_unchecked() }
-        })
+        match self.is_extra().not() {
+            true => {
+                // SAFETY: We have done a check that it's not extra
+                unsafe { Some(self.get_ptr_unchecked()) }
+            }
+            false => None,
+        }
     }
 
     /// Get the unstuffed pointer data from the stuffed pointer, assuming that the `StuffedPtr`
@@ -165,10 +167,13 @@ where
 
     /// Get owned extra data from this, or `None` if it contains pointer data
     pub fn into_extra(self) -> Option<S::Extra> {
-        self.is_extra().then(|| {
-            // SAFETY: We checked that it contains an extra above
-            unsafe { self.into_extra_unchecked() }
-        })
+        match self.is_extra() {
+            true => {
+                // SAFETY: We checked that it contains an extra above
+                unsafe { Some(self.into_extra_unchecked()) }
+            }
+            false => None,
+        }
     }
 
     /// Turn this pointer into extra data.
@@ -176,7 +181,7 @@ where
     /// `StuffedPtr` must contain extra data and not pointer
     pub unsafe fn into_extra_unchecked(self) -> S::Extra {
         // SAFETY: `self` is consumed and forgotten after this call
-        let extra = unsafe { self.get_extra_unchecked() };
+        let extra = self.get_extra_unchecked();
         mem::forget(self);
         extra
     }
@@ -185,10 +190,13 @@ where
     /// # Safety
     /// The caller must guarantee that only ever on `Extra` exists if `Extra: !Copy`
     pub unsafe fn get_extra(&self) -> Option<S::Extra> {
-        self.is_extra().then(|| {
-            // SAFETY: We checked that it contains extra above, the caller guarantees the rest
-            unsafe { self.get_extra_unchecked() }
-        })
+        match self.is_extra() {
+            true => {
+                // SAFETY: We checked that it contains extra above, the caller guarantees the rest
+                Some(self.get_extra_unchecked())
+            }
+            false => None,
+        }
     }
 
     /// Get extra data from this
@@ -197,7 +205,7 @@ where
     /// and the caller must guarantee that only ever on `Extra` exists if `Extra: !Copy`
     pub unsafe fn get_extra_unchecked(&self) -> S::Extra {
         let data = self.addr();
-        unsafe { S::extract_extra(data) }
+        S::extract_extra(data)
     }
 
     fn addr(&self) -> B {
@@ -227,7 +235,7 @@ where
     /// Must contain extra data and not pointer data,
     pub unsafe fn copy_extra_unchecked(&self) -> S::Extra {
         // SAFETY: `S::Extra: Copy`, and the caller guarantees that it's extra
-        unsafe { self.get_extra_unchecked() }
+        self.get_extra_unchecked()
     }
 }
 
@@ -336,7 +344,7 @@ where
         } else {
             // SAFETY: Checked above
             let ptr = unsafe { self.get_ptr_unchecked() };
-            core::ptr::hash(ptr, state);
+            ptr.hash(state);
         }
     }
 }
