@@ -29,6 +29,7 @@
 //! for more details.
 //! ```
 //! use std::collections::HashMap;
+//! # use std::convert::{TryFrom, TryInto};
 //!
 //! use stuff::{StuffedPtr, StuffingStrategy};
 //!
@@ -90,6 +91,7 @@ mod backend;
 mod strategy;
 
 use core::{
+	convert::TryFrom,
     fmt::{Debug, Formatter},
     hash::{Hash, Hasher},
     marker::PhantomData,

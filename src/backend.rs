@@ -1,5 +1,3 @@
-use core::mem;
-
 use sptr::Strict;
 
 /// A backend where the stuffed pointer is stored. Must be bigger or equal to the pointer size.
@@ -38,6 +36,9 @@ pub unsafe trait Backend<T> {
 
 #[cfg(test)] // todo: this mustn't affect the msrv, fix this later
 mod backend_size_asserts {
+	use core::mem;
+
+	use super::Backend;
 
     #[allow(dead_code)] // :/
     const fn assert_same_size<A, B>() {
