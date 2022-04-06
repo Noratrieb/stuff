@@ -91,3 +91,6 @@ fn main() {
     // `ptr` is a dangling pointer now!
 }
 ```
+
+# MSRV-Policy
+`stuff`s current MSRV is `1.31.1`, and this version will not get raised unless absolutely necessary.
