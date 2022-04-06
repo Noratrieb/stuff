@@ -131,7 +131,7 @@ where
     pub fn new_ptr(ptr: *mut T) -> Self {
         let addr = Strict::addr(ptr);
         let stuffed = S::stuff_ptr(addr);
-        Self(B::set_ptr(ptr, stuffed), PhantomData)
+        StuffedPtr(B::set_ptr(ptr, stuffed), PhantomData)
     }
 
     /// Create a new `StuffPtr` from extra data
@@ -140,7 +140,7 @@ where
         // if the user calls `set_ptr` it will use the new provenance from that ptr
         let ptr = core::ptr::null_mut();
         let extra = S::stuff_extra(extra);
-        Self(B::set_ptr(ptr, extra), PhantomData)
+        StuffedPtr(B::set_ptr(ptr, extra), PhantomData)
     }
 
     /// Get the pointer data, or `None` if it contains extra data
@@ -280,7 +280,7 @@ where
             Self::new_extra(cloned_extra)
         } else {
             // just copy the pointer
-            Self(self.0, PhantomData)
+            StuffedPtr(self.0, PhantomData)
         }
     }
 }

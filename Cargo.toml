@@ -11,7 +11,7 @@ license = "MIT"
 keywords = ["unsafe", "pointer", "bitpacking", "provenance", "tagging"]
 categories = ["data-structures", "memory-management", "no-std"]
 include = ["Cargo.toml", "LICENSE", "src", "README.md"]
-rust-version = "1.32.0"
+rust-version = "1.31.1"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 

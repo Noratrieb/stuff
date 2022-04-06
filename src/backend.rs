@@ -87,7 +87,7 @@ unsafe impl<T> Backend<T> for u64 {
 }
 
 macro_rules! impl_backend_2_tuple {
-    (impl for $ty:ty { (*mut T, $int:ident), $num:literal }) => {
+    (impl for $ty:ty { (*mut T, $int:ident), $num:expr }) => {
         unsafe impl<T> Backend<T> for $ty {
             // this one keeps the MSB in the pointer address, and the LSB in the integer
 
@@ -114,7 +114,7 @@ macro_rules! impl_backend_2_tuple {
 /// num1 is ptr-sized, num2 is 2*ptr sized
 #[cfg_attr(target_pointer_width = "64", allow(unused))] // not required on 64 bit
 macro_rules! impl_backend_3_tuple {
-    (impl for $ty:ty { (*mut T, $int1:ident, $int2:ident), $num1:literal, $num2:literal }) => {
+    (impl for $ty:ty { (*mut T, $int1:ident, $int2:ident), $num1:expr, $num2:expr }) => {
         unsafe impl<T> Backend<T> for $ty {
             // this one keeps the MSB in the pointer address, ISB in int1 and the LSB in the int2
 
