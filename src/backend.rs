@@ -3,9 +3,11 @@ use sptr::Strict;
 /// A backend where the stuffed pointer is stored. Must be bigger or equal to the pointer size.
 ///
 /// The `Backend` is a trait to define types that store the stuffed pointer. It's supposed to
-/// be implemented on `Copy` types like `usize`, `u64`, or `u128`. Note that these integers are basically
-/// just the strategy and exchange types for addresses, but *not* the actual underlying storage, which
-/// always contains a pointer to keep provenance (for example `(*mut T, u32)` on 32 bit for `u64`).
+/// be implemented on `Copy` types like `usize`, `u64`, or `u128`. Note that the `Self` type here
+/// serves as the main interchange format between the `Backend` and [`StuffedPtr`](`crate::StuffedPtr`)
+/// but *not* the actual underlying storage, which always contains a pointer to keep provenance
+/// (for example `(*mut T, u32)` on 32 bit for `u64`). This implies that `Self` *should* have the same
+/// size as `Backend::Stored`.
 ///
 /// This trait is just exposed for convenience and flexibility, you are usually not expected to implement
 /// it yourself, although such occasions could occur (for example to have a bigger storage than `u128`
