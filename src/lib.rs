@@ -92,6 +92,7 @@ extern crate alloc; // we want that for tests so we can use `Box`
 
 mod backend;
 mod strategy;
+mod tag;
 
 use core::{
     fmt::{Debug, Formatter},
