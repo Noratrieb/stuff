@@ -124,7 +124,6 @@ pub use crate::{backend::Backend, strategy::StuffingStrategy};
 #[repr(transparent)]
 pub struct StuffedPtr<T, S, B = usize>(B::Stored, PhantomData<S>)
 where
-    S: StuffingStrategy<B>,
     B: Backend<T>;
 
 impl<T, S, B> StuffedPtr<T, S, B>
@@ -165,8 +164,8 @@ where
     /// # Safety
     /// `StuffedPtr` must contain pointer data and not `other` data
     pub unsafe fn get_ptr_unchecked(&self) -> *mut T {
-        let (provenance, addr) = B::get_ptr(self.0);
-        let addr = S::extract_ptr(addr);
+        let (provenance, stored) = B::get_ptr(self.0);
+        let addr = S::extract_ptr(stored);
         Strict::with_addr(provenance, addr)
     }
 
