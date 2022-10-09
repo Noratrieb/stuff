@@ -1,7 +1,11 @@
 #![no_std]
 #![warn(rust_2018_idioms)]
 #![warn(missing_docs)]
-#![deny(clippy::disallowed_methods, clippy::undocumented_unsafe_blocks)]
+#![deny(clippy::undocumented_unsafe_blocks)]
+// deny the fuzzy provenance casts during tests
+// this makes `cargo test` require nightly but i don't care
+#![cfg_attr(test, feature(strict_provenance))]
+#![cfg_attr(test, deny(fuzzy_provenance_casts))]
 
 //! A crate for stuffing things into a pointer.
 //!
@@ -131,7 +135,7 @@ where
     pub fn new_ptr(ptr: *mut T) -> Self {
         let addr = Strict::addr(ptr);
         let stuffed = S::stuff_ptr(addr);
-        StuffedPtr(B::set_ptr(ptr.cast::<()>(), stuffed), PhantomData)
+        StuffedPtr(B::set_ptr(ptr as *mut (), stuffed), PhantomData)
     }
 
     /// Create a new `StuffPtr` from `other` data
@@ -147,7 +151,7 @@ where
     pub fn ptr(&self) -> Option<*mut T> {
         let (provenance, stored) = B::get_ptr(self.0);
         let addr = S::extract(stored).ptr()?;
-        Some(Strict::with_addr(provenance.cast::<T>(), addr))
+        Some(Strict::with_addr(provenance as *mut T, addr))
     }
 
     /// Get `other` data from this, or `None` if it contains pointer data
@@ -160,7 +164,7 @@ where
     pub fn unstuff(&self) -> Unstuffed<*mut T, S::Other> {
         let (provenance, stored) = B::get_ptr(self.0);
         let either = S::extract(stored);
-        either.map_ptr(|addr| Strict::with_addr(provenance.cast::<T>(), addr))
+        either.map_ptr(|addr| Strict::with_addr(provenance as *mut T, addr))
     }
 
     fn addr(&self) -> B {
@@ -254,24 +258,24 @@ mod either {
         /// Get the pointer, or `None` if it's the other
         pub fn ptr(&self) -> Option<P> {
             match *self {
-                Self::Ptr(ptr) => Some(ptr),
-                Self::Other(_) => None,
+                Unstuffed::Ptr(ptr) => Some(ptr),
+                Unstuffed::Other(_) => None,
             }
         }
 
         /// Get the other type, or `None` if it's the pointer
         pub fn other(self) -> Option<O> {
             match self {
-                Self::Ptr(_) => None,
-                Self::Other(other) => Some(other),
+                Unstuffed::Ptr(_) => None,
+                Unstuffed::Other(other) => Some(other),
             }
         }
 
         /// Maps the pointer type if it's a pointer, or does nothing if it's other
         pub fn map_ptr<U>(self, f: impl FnOnce(P) -> U) -> Unstuffed<U, O> {
             match self {
-                Self::Ptr(ptr) => Unstuffed::Ptr(f(ptr)),
-                Self::Other(other) => Unstuffed::Other(other),
+                Unstuffed::Ptr(ptr) => Unstuffed::Ptr(f(ptr)),
+                Unstuffed::Other(other) => Unstuffed::Other(other),
             }
         }
     }
@@ -303,13 +307,12 @@ mod tests {
             paste! {
                 #[test]
                 fn [<set_get_ptr_no_other__ $backend>]() {
-                     unsafe {
-                        let boxed = Box::new(1);
-                        let stuffed_ptr: StuffedPtr<i32, (), $backend> = from_box(boxed);
-                        let ptr = stuffed_ptr.ptr().unwrap();
-                        let boxed = Box::from_raw(ptr);
-                        assert_eq!(*boxed, 1);
-                    }
+                    let boxed = Box::new(1);
+                    let stuffed_ptr: StuffedPtr<i32, (), $backend> = from_box(boxed);
+                    let ptr = stuffed_ptr.ptr().unwrap();
+                    // SAFETY: We just allocated that one above
+                    let boxed = unsafe { Box::from_raw(ptr) };
+                    assert_eq!(*boxed, 1);
                 }
 
 
@@ -327,6 +330,7 @@ mod tests {
                     println!("{stuffed_ptr:?}");
                     assert!(format!("{stuffed_ptr:?}").starts_with("Ptr("));
 
+                    // SAFETY: We just allocated that one above
                     drop(unsafe { Box::from_raw(stuffed_ptr.ptr().unwrap()) });
 
                     let other = HasDebug;
