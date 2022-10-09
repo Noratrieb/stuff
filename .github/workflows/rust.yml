@@ -130,7 +130,7 @@ jobs:
     runs-on: ubuntu-latest
     env:
       RUSTFLAGS: "-Zrandomize-layout"
-      MIRIFLAGS: "-Zmiri-symbolic-alignment-check -Zmiri-check-number-validity -Zmiri-tag-raw-pointers"
+      MIRIFLAGS: "-Zmiri-retag-fields"
     steps:
       - uses: actions/checkout@v2
         with:
