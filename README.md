@@ -36,40 +36,34 @@ for more details.
 
 ```rust
 use std::collections::HashMap;
+use std::convert::{TryFrom, TryInto};
+use std::mem::ManuallyDrop;
 
-use stuff::{StuffedPtr, StuffingStrategy};
+use stuff::{StuffedPtr, StuffingStrategy, Unstuffed};
 
 // Create a unit struct for our strategy
 struct NanBoxStrategy;
 
 // implementation detail of NaN boxing, a quiet NaN mask
-const QNAN: u64 = 0x7ffc000000000000; 
+const QNAN: u64 = 0x7ffc000000000000;
 // implementation detail of NaN boxing, the sign bit of an f64
-const SIGN_BIT: u64 = 0x8000000000000000; 
+const SIGN_BIT: u64 = 0x8000000000000000;
 
-unsafe impl StuffingStrategy<u64> for NanBoxStrategy {
+impl StuffingStrategy<u64> for NanBoxStrategy {
     type Other = f64;
-
-    fn is_other(data: u64) -> bool {
-        (data & QNAN) != QNAN
-    }
-
     fn stuff_other(inner: Self::Other) -> u64 {
         unsafe { std::mem::transmute(inner) } // both are 64 bit POD's
     }
-
-    unsafe fn extract_other(data: u64) -> Self::Other {
-        std::mem::transmute(data) // both are 64 bit POD's
+    fn extract(data: u64) -> Unstuffed<usize, f64> {
+        if (data & QNAN) != QNAN {
+            Unstuffed::Other(f64::from_bits(data))
+        } else {
+            Unstuffed::Ptr((data & !(SIGN_BIT | QNAN)).try_into().unwrap())
+        }
     }
-
     fn stuff_ptr(addr: usize) -> u64 {
         // add the QNAN and SIGN_BIT
         SIGN_BIT | QNAN | u64::try_from(addr).unwrap()
-    }
-
-    fn extract_ptr(inner: u64) -> usize {
-        // keep everything except for QNAN and SIGN_BIT
-        (inner & !(SIGN_BIT | QNAN)).try_into().unwrap()
     }
 }
 
@@ -79,20 +73,19 @@ type Object = HashMap<String, u32>;
 // our value type
 type Value = StuffedPtr<Object, NanBoxStrategy, u64>;
 
-fn main() {
-    let float: Value = StuffedPtr::new_other(123.5);
-    assert_eq!(float.copy_other(), Some(123.5));
+let float: Value = StuffedPtr::new_other(123.5);
+assert_eq!(float.other(), Some(123.5));
 
-    let object: Object = HashMap::from([("a".to_owned(), 457)]);
-    let boxed = Box::new(object);
-    let ptr: Value = StuffedPtr::new_ptr(Box::into_raw(boxed));
+let object: Object = HashMap::from([("a".to_owned(), 457)]);
+let boxed = Box::new(object);
+let ptr: Value = StuffedPtr::new_ptr(Box::into_raw(boxed));
 
-    let object = unsafe { &*ptr.get_ptr().unwrap() };
-    assert_eq!(object.get("a"), Some(&457));
+let object = unsafe { &*ptr.ptr().unwrap() };
+assert_eq!(object.get("a"), Some(&457));
 
-    drop(unsafe { Box::from_raw(ptr.get_ptr().unwrap()) });
-    // be careful, `ptr` is a dangling pointer now!
-}
+drop(unsafe { Box::from_raw(ptr.ptr().unwrap()) });
+
+// be careful, `ptr` is a dangling pointer now!
 ```
 
 # MSRV-Policy
