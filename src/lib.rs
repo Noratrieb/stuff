@@ -42,7 +42,7 @@
 //! // implementation detail of NaN boxing, the sign bit of an f64
 //! const SIGN_BIT: u64 = 0x8000000000000000;
 //!
-//! unsafe impl StuffingStrategy<u64> for NanBoxStrategy {
+//! impl StuffingStrategy<u64> for NanBoxStrategy {
 //!     type Other = f64;
 //!
 //!     fn stuff_other(inner: Self::Other) -> u64 {

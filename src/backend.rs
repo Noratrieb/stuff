@@ -54,6 +54,7 @@ mod backend_size_asserts {
     const _: () = assert_same_size::<usize, <usize as Backend>::Stored>();
 }
 
+// SAFETY: We are careful around provenance
 unsafe impl Backend for usize {
     type Stored = *mut ();
 
@@ -72,6 +73,7 @@ unsafe impl Backend for usize {
 
 #[cfg(target_pointer_width = "64")]
 /// on 64 bit, we can just treat u64/usize interchangeably, because uintptr_t == size_t in Rust
+// SAFETY: We are careful around provenance
 unsafe impl Backend for u64 {
     type Stored = *mut ();
 
@@ -90,6 +92,7 @@ unsafe impl Backend for u64 {
 
 macro_rules! impl_backend_2_tuple {
     (impl for $ty:ty { (*mut (), $int:ident), $num:expr }) => {
+        // SAFETY: We are careful around provenance
         unsafe impl Backend for $ty {
             // this one keeps the MSB in the pointer address, and the LSB in the integer
 
@@ -117,6 +120,7 @@ macro_rules! impl_backend_2_tuple {
 #[cfg_attr(target_pointer_width = "64", allow(unused))] // not required on 64 bit
 macro_rules! impl_backend_3_tuple {
     (impl for $ty:ty { (*mut (), $int1:ident, $int2:ident), $num1:expr, $num2:expr }) => {
+        // SAFETY: We are careful around provenance
         unsafe impl Backend for $ty {
             // this one keeps the MSB in the pointer address, ISB in int1 and the LSB in the int2
 
