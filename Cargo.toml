@@ -1,6 +1,6 @@
 [package]
 name = "stuff"
-version = "0.2.0"
+version = "0.3.0-beta.0"
 edition = "2018"
 description = "Stuffing things into pointers."
 readme = "./README.md"
@@ -8,7 +8,7 @@ homepage = "https://github.com/Nilstrieb/stuff"
 repository = "https://github.com/Nilstrieb/stuff"
 documentation = "https://docs.rs/stuff"
 license = "MIT"
-keywords = ["unsafe", "pointer", "bitpacking", "provenance", "tagging"]
+keywords = ["unsafe", "pointer", "bitpacking", "provenance"]
 categories = ["data-structures", "memory-management", "no-std"]
 include = ["Cargo.toml", "LICENSE", "src", "README.md"]
 rust-version = "1.34.2"
