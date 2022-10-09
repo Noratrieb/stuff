@@ -32,7 +32,7 @@
 //! # use std::convert::{TryFrom, TryInto};
 //! use std::mem::ManuallyDrop;
 //!
-//! use stuff::{StuffedPtr, StuffingStrategy, Either};
+//! use stuff::{StuffedPtr, StuffingStrategy, Unstuffed};
 //!
 //! // Create a unit struct for our strategy
 //! struct NanBoxStrategy;
@@ -49,11 +49,11 @@
 //!         unsafe { std::mem::transmute(inner) } // both are 64 bit POD's
 //!     }
 //!
-//!     unsafe fn extract(data: u64) -> Either<usize, ManuallyDrop<f64>> {
+//!     fn extract(data: u64) -> Unstuffed<usize, f64> {
 //!         if (data & QNAN) != QNAN {
-//!             Either::Other(ManuallyDrop::new(f64::from_bits(data)))
+//!             Unstuffed::Other(f64::from_bits(data))
 //!         } else {
-//!             Either::Ptr((data & !(SIGN_BIT | QNAN)).try_into().unwrap())
+//!             Unstuffed::Ptr((data & !(SIGN_BIT | QNAN)).try_into().unwrap())
 //!         }
 //!     }
 //!
@@ -70,16 +70,16 @@
 //! type Value = StuffedPtr<Object, NanBoxStrategy, u64>;
 //!
 //! let float: Value = StuffedPtr::new_other(123.5);
-//! assert_eq!(float.copy_other(), Some(123.5));
+//! assert_eq!(float.other(), Some(123.5));
 //!
 //! let object: Object = HashMap::from([("a".to_owned(), 457)]);
 //! let boxed = Box::new(object);
 //! let ptr: Value = StuffedPtr::new_ptr(Box::into_raw(boxed));
 //!
-//! let object = unsafe { &*ptr.get_ptr().unwrap() };
+//! let object = unsafe { &*ptr.ptr().unwrap() };
 //! assert_eq!(object.get("a"), Some(&457));
 //!
-//! drop(unsafe { Box::from_raw(ptr.get_ptr().unwrap()) });
+//! drop(unsafe { Box::from_raw(ptr.ptr().unwrap()) });
 //!
 //! // be careful, `ptr` is a dangling pointer now!
 //! ```
@@ -97,12 +97,11 @@ use core::{
     fmt::{Debug, Formatter},
     hash::{Hash, Hasher},
     marker::PhantomData,
-    mem::ManuallyDrop,
 };
 
 use sptr::Strict;
 
-pub use crate::{backend::Backend, either::Either, guard::Guard, strategy::StuffingStrategy};
+pub use crate::{backend::Backend, either::Unstuffed, strategy::StuffingStrategy};
 
 /// A union of a pointer or some `other` data, bitpacked into a value with the size depending on
 /// `B`. It defaults to `usize`, meaning pointer sized, but `u64` and `u128` are also provided
@@ -114,13 +113,12 @@ pub use crate::{backend::Backend, either::Either, guard::Guard, strategy::Stuffi
 ///
 /// For a usage example, view the crate level documentation.
 ///
-/// This pointer does *not* drop `other` data, [`StuffedPtr::into_other`] can be used if that is required.
-///
-/// `StuffedPtr` implements most traits like `Clone`, `PartialEq` or `Copy` if the `other` type does.
+/// `StuffedPtr` implements most traits like `Hash` or `PartialEq` if the `other` type does.
+/// It's also always `Copy`, and therefore requires the other type to be `Copy` as well.
 ///
 /// This type is guaranteed to be `#[repr(transparent)]` to a `B::Stored`.
 #[repr(transparent)]
-pub struct StuffedPtr<T, S, B = usize>(B::Stored, PhantomData<Either<*mut T, S>>)
+pub struct StuffedPtr<T, S, B = usize>(B::Stored, PhantomData<Unstuffed<*mut T, S>>)
 where
     B: Backend;
 
@@ -146,58 +144,27 @@ where
     }
 
     /// Get the pointer data, or `None` if it contains `other` data
-    pub fn get_ptr(&self) -> Option<*mut T> {
+    pub fn ptr(&self) -> Option<*mut T> {
         let (provenance, stored) = B::get_ptr(self.0);
-        let addr = unsafe { S::extract(stored).ptr()? };
+        let addr = S::extract(stored).ptr()?;
         Some(Strict::with_addr(provenance.cast::<T>(), addr))
     }
 
-    /// Get owned `other` data from this, or `None` if it contains pointer data
-    pub unsafe fn into_other(self) -> Option<S::Other> {
-        let this = ManuallyDrop::new(self);
-        // SAFETY: `self` is consumed and forgotten after this call
-        let other = this.get_other();
-        other.map(|md| ManuallyDrop::into_inner(md))
-    }
-
     /// Get `other` data from this, or `None` if it contains pointer data
-    pub unsafe fn get_other(&self) -> Option<ManuallyDrop<S::Other>> {
+    pub fn other(&self) -> Option<S::Other> {
         let data = self.addr();
-        unsafe { S::extract(data).other() }
+        S::extract(data).other()
     }
 
-    pub fn into_inner(self) -> Either<*mut T, S::Other> {
+    /// Get out the unstuffed enum representation
+    pub fn unstuff(&self) -> Unstuffed<*mut T, S::Other> {
         let (provenance, stored) = B::get_ptr(self.0);
-        let either = unsafe { S::extract(stored) };
-        either
-            .map_ptr(|addr| Strict::with_addr(provenance.cast::<T>(), addr))
-            .map_other(|other| ManuallyDrop::into_inner(other))
-    }
-
-    pub fn get(&self) -> Either<*mut T, Guard<'_, S::Other>> {
-        let (provenance, stored) = B::get_ptr(self.0);
-        let either = unsafe { S::extract(stored) };
-        either
-            .map_ptr(|addr| Strict::with_addr(provenance.cast::<T>(), addr))
-            .map_other(|other| Guard::new(other))
+        let either = S::extract(stored);
+        either.map_ptr(|addr| Strict::with_addr(provenance.cast::<T>(), addr))
     }
 
     fn addr(&self) -> B {
         B::get_int(self.0)
-    }
-}
-
-/// Extra implementations if the `other` type is `Copy`
-impl<T, S, B> StuffedPtr<T, S, B>
-where
-    S: StuffingStrategy<B>,
-    S::Other: Copy,
-    B: Backend,
-{
-    /// Get `other` data from this, or `None` if it's pointer data
-    pub fn copy_other(&self) -> Option<S::Other> {
-        // SAFETY: `S::Other: Copy`
-        unsafe { self.get_other().map(|other| *other) }
     }
 }
 
@@ -208,9 +175,9 @@ where
     B: Backend,
 {
     fn fmt(&self, f: &mut Formatter<'_>) -> core::fmt::Result {
-        match self.get() {
-            Either::Ptr(ptr) => f.debug_tuple("Ptr").field(&ptr).finish(),
-            Either::Other(other) => f.debug_tuple("Other").field(other.inner()).finish(),
+        match self.unstuff() {
+            Unstuffed::Ptr(ptr) => f.debug_tuple("Ptr").field(&ptr).finish(),
+            Unstuffed::Other(other) => f.debug_tuple("Other").field(&other).finish(),
         }
     }
 }
@@ -218,24 +185,16 @@ where
 impl<T, S, B> Clone for StuffedPtr<T, S, B>
 where
     S: StuffingStrategy<B>,
-    S::Other: Clone,
     B: Backend,
 {
     fn clone(&self) -> Self {
-        match self.get() {
-            Either::Ptr(ptr) => StuffedPtr::new_ptr(ptr),
-            Either::Other(other) => {
-                let cloned_other = other.inner().clone();
-                Self::new_other(cloned_other)
-            }
-        }
+        *self
     }
 }
 
 impl<T, S, B> Copy for StuffedPtr<T, S, B>
 where
     S: StuffingStrategy<B>,
-    S::Other: Copy,
     B: Backend,
 {
 }
@@ -247,9 +206,9 @@ where
     B: Backend,
 {
     fn eq(&self, other: &Self) -> bool {
-        match (self.get(), other.get()) {
-            (Either::Ptr(a), Either::Ptr(b)) => core::ptr::eq(a, b),
-            (Either::Other(a), Either::Other(b)) => a.inner() == b.inner(),
+        match (self.unstuff(), other.unstuff()) {
+            (Unstuffed::Ptr(a), Unstuffed::Ptr(b)) => core::ptr::eq(a, b),
+            (Unstuffed::Other(a), Unstuffed::Other(b)) => a == b,
             _ => false,
         }
     }
@@ -270,25 +229,29 @@ where
     B: Backend,
 {
     fn hash<H: Hasher>(&self, state: &mut H) {
-        match self.get() {
-            Either::Ptr(ptr) => {
+        match self.unstuff() {
+            Unstuffed::Ptr(ptr) => {
                 ptr.hash(state);
             }
-            Either::Other(other) => {
-                other.inner().hash(state);
+            Unstuffed::Other(other) => {
+                other.hash(state);
             }
         }
     }
 }
 
 mod either {
+    /// The enum representation of a `StuffedPtr`
     #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-    pub enum Either<P, O> {
+    pub enum Unstuffed<P, O> {
+        /// The pointer or pointer address
         Ptr(P),
+        /// The other type
         Other(O),
     }
 
-    impl<P: Copy, O> Either<P, O> {
+    impl<P: Copy, O> Unstuffed<P, O> {
+        /// Get the pointer, or `None` if it's the other
         pub fn ptr(&self) -> Option<P> {
             match *self {
                 Self::Ptr(ptr) => Some(ptr),
@@ -296,6 +259,7 @@ mod either {
             }
         }
 
+        /// Get the other type, or `None` if it's the pointer
         pub fn other(self) -> Option<O> {
             match self {
                 Self::Ptr(_) => None,
@@ -303,125 +267,12 @@ mod either {
             }
         }
 
-        pub fn map_ptr<U>(self, f: impl FnOnce(P) -> U) -> Either<U, O> {
+        /// Maps the pointer type if it's a pointer, or does nothing if it's other
+        pub fn map_ptr<U>(self, f: impl FnOnce(P) -> U) -> Unstuffed<U, O> {
             match self {
-                Self::Ptr(ptr) => Either::Ptr(f(ptr)),
-                Self::Other(other) => Either::Other(other),
+                Self::Ptr(ptr) => Unstuffed::Ptr(f(ptr)),
+                Self::Other(other) => Unstuffed::Other(other),
             }
-        }
-
-        pub fn map_other<U>(self, f: impl FnOnce(O) -> U) -> Either<P, U> {
-            match self {
-                Self::Ptr(ptr) => Either::Ptr(ptr),
-                Self::Other(other) => Either::Other(f(other)),
-            }
-        }
-    }
-}
-
-mod guard {
-    use core::{fmt::Debug, marker::PhantomData, mem::ManuallyDrop, ops::Deref};
-
-    use self::no_alias::AllowAlias;
-
-    mod no_alias {
-        use core::{fmt::Debug, hash::Hash, mem::MaybeUninit, ops::Deref};
-
-        /// A `T` except with aliasing problems removed
-        ///
-        /// this is very sketchy and actually kinda equivalent to whatever ralf wants to add to ManuallyDrop
-        /// so idk but whatever this is a great type
-        pub struct AllowAlias<T>(MaybeUninit<T>);
-
-        impl<T> AllowAlias<T> {
-            pub fn new(value: T) -> Self {
-                Self(MaybeUninit::new(value))
-            }
-
-            pub fn into_inner(self) -> T {
-                unsafe { self.0.assume_init() }
-            }
-        }
-
-        impl<T: Debug> Debug for AllowAlias<T> {
-            fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-                f.debug_tuple("NoAlias").field(&self.0).finish()
-            }
-        }
-
-        impl<T: PartialEq> PartialEq for AllowAlias<T> {
-            fn eq(&self, other: &Self) -> bool {
-                &*self == &*other
-            }
-        }
-
-        impl<T: Eq> Eq for AllowAlias<T> {}
-
-        impl<T: PartialOrd> PartialOrd for AllowAlias<T> {
-            fn partial_cmp(&self, other: &Self) -> Option<core::cmp::Ordering> {
-                self.deref().partial_cmp(&*other)
-            }
-        }
-
-        impl<T: Ord> Ord for AllowAlias<T> {
-            fn cmp(&self, other: &Self) -> core::cmp::Ordering {
-                self.deref().cmp(&*other)
-            }
-        }
-
-        impl<T: Hash> Hash for AllowAlias<T> {
-            fn hash<H: core::hash::Hasher>(&self, state: &mut H) {
-                self.deref().hash(state);
-            }
-        }
-
-        impl<T> Deref for AllowAlias<T> {
-            type Target = T;
-
-            fn deref(&self) -> &Self::Target {
-                unsafe { self.0.assume_init_ref() }
-            }
-        }
-    }
-
-    /// Acts like a `&T` but has to carry around the value.
-    pub struct Guard<'a, T> {
-        inner: AllowAlias<T>,
-        _boo: PhantomData<&'a ()>,
-    }
-
-    impl<'a, T> Guard<'a, T> {
-        pub fn new(value: ManuallyDrop<T>) -> Self {
-            Self {
-                inner: AllowAlias::new(ManuallyDrop::into_inner(value)),
-                _boo: PhantomData,
-            }
-        }
-
-        /// # Safety
-        /// Make sure to not violate aliasing with this
-        pub unsafe fn into_inner(self) -> ManuallyDrop<T> {
-            ManuallyDrop::new(self.inner.into_inner())
-        }
-
-        pub fn inner(&self) -> &T {
-            &*self
-        }
-    }
-
-    impl<T> Deref for Guard<'_, T> {
-        type Target = T;
-
-        fn deref(&self) -> &Self::Target {
-            &*self.inner
-        }
-    }
-
-    impl<T: Debug> Debug for Guard<'_, T> {
-        fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-            f.debug_struct("NeverDrop")
-                .field("inner", &*self.inner)
-                .finish()
         }
     }
 }
@@ -430,18 +281,14 @@ mod guard {
 mod tests {
     #![allow(non_snake_case)]
 
-    use core::mem;
     use std::{boxed::Box, format, println};
 
     use paste::paste;
 
     use crate::{
-        strategy::test_strategies::{EmptyInMax, HasDebug, PanicsInDrop},
+        strategy::test_strategies::{EmptyInMax, HasDebug},
         Backend, StuffedPtr, StuffingStrategy,
     };
-
-    // note: the tests mostly use the `PanicsInDrop` type and strategy, to make sure that no
-    // `other` is ever dropped accidentally.
 
     fn from_box<T, S, B>(boxed: Box<T>) -> StuffedPtr<T, S, B>
     where
@@ -459,7 +306,7 @@ mod tests {
                      unsafe {
                         let boxed = Box::new(1);
                         let stuffed_ptr: StuffedPtr<i32, (), $backend> = from_box(boxed);
-                        let ptr = stuffed_ptr.get_ptr().unwrap();
+                        let ptr = stuffed_ptr.ptr().unwrap();
                         let boxed = Box::from_raw(ptr);
                         assert_eq!(*boxed, 1);
                     }
@@ -469,8 +316,8 @@ mod tests {
                 #[test]
                 fn [<get_other__ $backend>]() {
                     let stuffed_ptr: StuffedPtr<(), EmptyInMax, $backend> = StuffedPtr::new_other(EmptyInMax);
-                    assert!(unsafe { stuffed_ptr.get_other() }.is_some());
-                    assert!(matches!(stuffed_ptr.copy_other(), Some(EmptyInMax)));
+                    assert!(stuffed_ptr.other().is_some());
+                    assert!(matches!(stuffed_ptr.other(), Some(EmptyInMax)));
                 }
 
                 #[test]
@@ -480,7 +327,7 @@ mod tests {
                     println!("{stuffed_ptr:?}");
                     assert!(format!("{stuffed_ptr:?}").starts_with("Ptr("));
 
-                    drop(unsafe { Box::from_raw(stuffed_ptr.get_ptr().unwrap()) });
+                    drop(unsafe { Box::from_raw(stuffed_ptr.ptr().unwrap()) });
 
                     let other = HasDebug;
                     let stuffed_ptr: StuffedPtr<i32, HasDebug, $backend> = StuffedPtr::new_other(other);
@@ -494,13 +341,11 @@ mod tests {
                 #[allow(clippy::redundant_clone)]
                 fn [<clone__ $backend>]() {
                     let mut unit = ();
-                    let stuffed_ptr1: StuffedPtr<(), PanicsInDrop, $backend> = StuffedPtr::new_ptr(&mut unit);
+                    let stuffed_ptr1: StuffedPtr<(), EmptyInMax, $backend> = StuffedPtr::new_ptr(&mut unit);
                     let _ = stuffed_ptr1.clone();
 
-                    let stuffed_ptr1: StuffedPtr<(), PanicsInDrop, $backend> = StuffedPtr::new_other(PanicsInDrop);
-                    let stuffed_ptr2 = stuffed_ptr1.clone();
-
-                    mem::forget((stuffed_ptr1, stuffed_ptr2));
+                    let stuffed_ptr1: StuffedPtr<(), EmptyInMax, $backend> = StuffedPtr::new_other(EmptyInMax);
+                    let _ = stuffed_ptr1.clone();
                 }
 
 
@@ -508,42 +353,17 @@ mod tests {
                 fn [<eq__ $backend>]() {
                     // two pointers
                     let mut unit = ();
-                    let stuffed_ptr1: StuffedPtr<(), PanicsInDrop, $backend> = StuffedPtr::new_ptr(&mut unit);
-                    let stuffed_ptr2: StuffedPtr<(), PanicsInDrop, $backend> = StuffedPtr::new_ptr(&mut unit);
+                    let stuffed_ptr1: StuffedPtr<(), EmptyInMax, $backend> = StuffedPtr::new_ptr(&mut unit);
+                    let stuffed_ptr2: StuffedPtr<(), EmptyInMax, $backend> = StuffedPtr::new_ptr(&mut unit);
 
                     assert_eq!(stuffed_ptr1, stuffed_ptr2);
 
-                    let stuffed_ptr1: StuffedPtr<(), PanicsInDrop, $backend> = StuffedPtr::new_ptr(&mut unit);
-                    let stuffed_ptr2: StuffedPtr<(), PanicsInDrop, $backend> = StuffedPtr::new_other(PanicsInDrop);
+                    let stuffed_ptr1: StuffedPtr<(), EmptyInMax, $backend> = StuffedPtr::new_ptr(&mut unit);
+                    let stuffed_ptr2: StuffedPtr<(), EmptyInMax, $backend> = StuffedPtr::new_other(EmptyInMax);
 
                     assert_ne!(stuffed_ptr1, stuffed_ptr2);
-                    mem::forget(stuffed_ptr2);
                 }
 
-
-                #[test]
-                fn [<dont_drop_other_when_pointer__ $backend>]() {
-                    let mut unit = ();
-                    let stuffed_ptr: StuffedPtr<(), PanicsInDrop, $backend> = StuffedPtr::new_ptr(&mut unit);
-                    // the panicking drop needs not to be called here!
-                    drop(stuffed_ptr);
-                }
-
-
-                #[test]
-                fn [<some_traits_dont_drop__ $backend>]() {
-                    // make sure that other is never dropped twice
-
-                    let stuffed_ptr1: StuffedPtr<(), PanicsInDrop, $backend> = StuffedPtr::new_other(PanicsInDrop);
-                    let stuffed_ptr2: StuffedPtr<(), PanicsInDrop, $backend> = StuffedPtr::new_other(PanicsInDrop);
-
-                    // PartialEq
-                    assert_eq!(stuffed_ptr1, stuffed_ptr2);
-                    // Debug
-                    let _ = format!("{stuffed_ptr1:?}");
-
-                    mem::forget((stuffed_ptr1, stuffed_ptr2));
-                }
             }
         };
     }

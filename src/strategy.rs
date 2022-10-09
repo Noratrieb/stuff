@@ -1,6 +1,6 @@
-use core::{convert::TryInto, mem::ManuallyDrop};
+use core::convert::TryInto;
 
-use crate::{Backend, Either};
+use crate::{Backend, Unstuffed};
 
 /// A trait that describes how to stuff others and pointers into the pointer sized object.
 ///
@@ -16,14 +16,11 @@ use crate::{Backend, Either};
 /// If [`StuffingStrategy::is_other`] returns true for a value, then
 /// [`StuffingStrategy::extract_other`] *must* return a valid `Other` for that same value.
 ///
-/// [`StuffingStrategy::stuff_other`] *must* consume `inner` and make sure that it's not dropped
-/// if it isn't `Copy`.
-///
 /// For [`StuffingStrategy::stuff_ptr`] and [`StuffingStrategy::extract_ptr`],
 /// `ptr == extract_ptr(stuff_ptr(ptr))` *must* hold true.
 pub unsafe trait StuffingStrategy<B> {
     /// The type of the other.
-    type Other;
+    type Other: Copy;
 
     /// Stuff other data into a usize that is then put into the pointer. This operation
     /// must be infallible.
@@ -32,7 +29,7 @@ pub unsafe trait StuffingStrategy<B> {
     /// Extract the pointer data or other data
     /// # Safety
     /// `data` must contain data created by [`StuffingStrategy::stuff_other`].
-    unsafe fn extract(data: B) -> Either<usize, ManuallyDrop<Self::Other>>;
+    fn extract(data: B) -> Unstuffed<usize, Self::Other>;
 
     /// Stuff a pointer address into the pointer sized integer.
     ///
@@ -54,8 +51,8 @@ where
         B::default()
     }
 
-    unsafe fn extract(data: B) -> Either<usize, ManuallyDrop<Self::Other>> {
-        Either::Ptr(
+    fn extract(data: B) -> Unstuffed<usize, Self::Other> {
+        Unstuffed::Ptr(
             data.try_into()
                 // note: this can't happen 🤔
                 .unwrap_or_else(|_| panic!("Pointer value too big for usize")),
@@ -70,13 +67,10 @@ where
 
 #[cfg(test)]
 pub(crate) mod test_strategies {
-    use core::{
-        fmt::{Debug, Formatter},
-        mem::ManuallyDrop,
-    };
+    use core::fmt::{Debug, Formatter};
 
     use super::StuffingStrategy;
-    use crate::Either;
+    use crate::Unstuffed;
 
     macro_rules! impl_usize_max_zst {
         ($ty:ident) => {
@@ -90,10 +84,10 @@ pub(crate) mod test_strategies {
                     usize::MAX
                 }
 
-                unsafe fn extract(data: usize) -> Either<usize, ManuallyDrop<Self::Other>> {
+                fn extract(data: usize) -> Unstuffed<usize, Self::Other> {
                     match data == usize::MAX {
-                        true => Either::Other(ManuallyDrop::new($ty)),
-                        false => Either::Ptr(data),
+                        true => Unstuffed::Other($ty),
+                        false => Unstuffed::Ptr(data),
                     }
                 }
 
@@ -111,10 +105,10 @@ pub(crate) mod test_strategies {
                     u64::MAX
                 }
 
-                unsafe fn extract(data: u64) -> Either<usize, ManuallyDrop<Self::Other>> {
+                fn extract(data: u64) -> Unstuffed<usize, Self::Other> {
                     match data == u64::MAX {
-                        true => Either::Other(ManuallyDrop::new($ty)),
-                        false => Either::Ptr(data as usize),
+                        true => Unstuffed::Other($ty),
+                        false => Unstuffed::Ptr(data as usize),
                     }
                 }
 
@@ -132,10 +126,10 @@ pub(crate) mod test_strategies {
                     u128::MAX
                 }
 
-                unsafe fn extract(data: u128) -> Either<usize, ManuallyDrop<Self::Other>> {
+                fn extract(data: u128) -> Unstuffed<usize, Self::Other> {
                     match data == u128::MAX {
-                        true => Either::Other(ManuallyDrop::new($ty)),
-                        false => Either::Ptr(data as usize),
+                        true => Unstuffed::Other($ty),
+                        false => Unstuffed::Ptr(data as usize),
                     }
                 }
 
@@ -146,11 +140,12 @@ pub(crate) mod test_strategies {
         };
     }
 
-    #[derive(Clone, Copy)]
+    #[derive(Clone, Copy, PartialEq, Eq, Debug)]
     pub struct EmptyInMax;
 
     impl_usize_max_zst!(EmptyInMax);
 
+    #[derive(Clone, Copy)]
     pub struct HasDebug;
 
     impl Debug for HasDebug {
@@ -160,15 +155,4 @@ pub(crate) mod test_strategies {
     }
 
     impl_usize_max_zst!(HasDebug);
-
-    #[derive(Debug, Clone, PartialEq, Eq)]
-    pub struct PanicsInDrop;
-
-    impl Drop for PanicsInDrop {
-        fn drop(&mut self) {
-            panic!("oh no!!!");
-        }
-    }
-
-    impl_usize_max_zst!(PanicsInDrop);
 }
