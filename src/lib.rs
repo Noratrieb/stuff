@@ -2,10 +2,6 @@
 #![warn(rust_2018_idioms)]
 #![warn(missing_docs)]
 #![deny(clippy::undocumented_unsafe_blocks)]
-// deny the fuzzy provenance casts during tests
-// this makes `cargo test` require nightly but i don't care
-#![cfg_attr(test, feature(strict_provenance))]
-#![cfg_attr(test, deny(fuzzy_provenance_casts))]
 
 //! A crate for stuffing things into a pointer.
 //!
@@ -283,7 +279,7 @@ mod either {
 
 #[cfg(test)]
 mod tests {
-    #![allow(non_snake_case)]
+    #![allow(non_snake_case, clippy::undocumented_unsafe_blocks)]
 
     use std::{boxed::Box, format, println};
 
