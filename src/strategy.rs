@@ -10,15 +10,7 @@ use crate::{Backend, Unstuffed};
 /// if possible.
 ///
 /// The generic parameter `B` stands for the [`Backend`](`crate::Backend`) used by the strategy.
-///
-/// # Safety
-///
-/// If [`StuffingStrategy::is_other`] returns true for a value, then
-/// [`StuffingStrategy::extract_other`] *must* return a valid `Other` for that same value.
-///
-/// For [`StuffingStrategy::stuff_ptr`] and [`StuffingStrategy::extract_ptr`],
-/// `ptr == extract_ptr(stuff_ptr(ptr))` *must* hold true.
-pub unsafe trait StuffingStrategy<B> {
+pub trait StuffingStrategy<B> {
     /// The type of the other.
     type Other: Copy;
 
@@ -40,7 +32,7 @@ pub unsafe trait StuffingStrategy<B> {
     fn stuff_ptr(addr: usize) -> B;
 }
 
-unsafe impl<B> StuffingStrategy<B> for ()
+impl<B> StuffingStrategy<B> for ()
 where
     B: Backend + Default + TryInto<usize>,
     usize: TryInto<B>,
@@ -75,7 +67,7 @@ pub(crate) mod test_strategies {
     macro_rules! impl_usize_max_zst {
         ($ty:ident) => {
             // this one lives in usize::MAX
-            unsafe impl StuffingStrategy<usize> for $ty {
+            impl StuffingStrategy<usize> for $ty {
                 type Other = Self;
 
                 #[allow(clippy::forget_copy)]
@@ -96,7 +88,7 @@ pub(crate) mod test_strategies {
                 }
             }
 
-            unsafe impl StuffingStrategy<u64> for $ty {
+            impl StuffingStrategy<u64> for $ty {
                 type Other = Self;
 
                 #[allow(clippy::forget_copy)]
@@ -117,7 +109,7 @@ pub(crate) mod test_strategies {
                 }
             }
 
-            unsafe impl StuffingStrategy<u128> for $ty {
+            impl StuffingStrategy<u128> for $ty {
                 type Other = Self;
 
                 #[allow(clippy::forget_copy)]
