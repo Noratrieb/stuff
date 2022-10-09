@@ -1,3 +1,0 @@
-disallowed-methods = [
-    { path = "core::mem::forget", reason = "mem::forget is sketchy around unsafe code, use ManuallyDrop instead" }
-]
