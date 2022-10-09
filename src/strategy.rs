@@ -1,6 +1,6 @@
-use core::convert::TryInto;
+use core::{convert::TryInto, mem::ManuallyDrop};
 
-use crate::Backend;
+use crate::{Backend, Either};
 
 /// A trait that describes how to stuff others and pointers into the pointer sized object.
 ///
@@ -25,18 +25,14 @@ pub unsafe trait StuffingStrategy<B> {
     /// The type of the other.
     type Other;
 
-    /// Checks whether the `StufferPtr` data value contains an other value. The result of this
-    /// function can be trusted.
-    fn is_other(data: B) -> bool;
-
     /// Stuff other data into a usize that is then put into the pointer. This operation
     /// must be infallible.
     fn stuff_other(inner: Self::Other) -> B;
 
-    /// Extract other data from the data.
+    /// Extract the pointer data or other data
     /// # Safety
     /// `data` must contain data created by [`StuffingStrategy::stuff_other`].
-    unsafe fn extract_other(data: B) -> Self::Other;
+    unsafe fn extract(data: B) -> Either<usize, ManuallyDrop<Self::Other>>;
 
     /// Stuff a pointer address into the pointer sized integer.
     ///
@@ -45,48 +41,42 @@ pub unsafe trait StuffingStrategy<B> {
     ///
     /// The default implementation just returns the address directly.
     fn stuff_ptr(addr: usize) -> B;
-
-    /// Extract the pointer address from the data.
-    ///
-    /// This function expects `inner` to come directly from [`StuffingStrategy::stuff_ptr`].
-    fn extract_ptr(inner: B) -> usize;
 }
 
 unsafe impl<B> StuffingStrategy<B> for ()
 where
-    B: Backend<()> + Default + TryInto<usize>,
+    B: Backend + Default + TryInto<usize>,
     usize: TryInto<B>,
 {
     type Other = ();
-
-    fn is_other(_data: B) -> bool {
-        false
-    }
 
     fn stuff_other(_inner: Self::Other) -> B {
         B::default()
     }
 
-    unsafe fn extract_other(_data: B) -> Self::Other {}
+    unsafe fn extract(data: B) -> Either<usize, ManuallyDrop<Self::Other>> {
+        Either::Ptr(
+            data.try_into()
+                // note: this can't happen 🤔
+                .unwrap_or_else(|_| panic!("Pointer value too big for usize")),
+        )
+    }
 
     fn stuff_ptr(addr: usize) -> B {
         addr.try_into()
             .unwrap_or_else(|_| panic!("Address in `stuff_ptr` too big"))
     }
-
-    fn extract_ptr(inner: B) -> usize {
-        inner
-            .try_into()
-            // note: this can't happen 🤔
-            .unwrap_or_else(|_| panic!("Pointer value too big for usize"))
-    }
 }
 
 #[cfg(test)]
 pub(crate) mod test_strategies {
-    use core::fmt::{Debug, Formatter};
+    use core::{
+        fmt::{Debug, Formatter},
+        mem::ManuallyDrop,
+    };
 
     use super::StuffingStrategy;
+    use crate::Either;
 
     macro_rules! impl_usize_max_zst {
         ($ty:ident) => {
@@ -94,34 +84,26 @@ pub(crate) mod test_strategies {
             unsafe impl StuffingStrategy<usize> for $ty {
                 type Other = Self;
 
-                fn is_other(data: usize) -> bool {
-                    data == usize::MAX
-                }
-
                 #[allow(clippy::forget_copy)]
                 fn stuff_other(inner: Self::Other) -> usize {
                     core::mem::forget(inner);
                     usize::MAX
                 }
 
-                unsafe fn extract_other(_data: usize) -> Self::Other {
-                    $ty
+                unsafe fn extract(data: usize) -> Either<usize, ManuallyDrop<Self::Other>> {
+                    match data == usize::MAX {
+                        true => Either::Other(ManuallyDrop::new($ty)),
+                        false => Either::Ptr(data),
+                    }
                 }
 
                 fn stuff_ptr(addr: usize) -> usize {
                     addr
                 }
-
-                fn extract_ptr(inner: usize) -> usize {
-                    inner
-                }
             }
+
             unsafe impl StuffingStrategy<u64> for $ty {
                 type Other = Self;
-
-                fn is_other(data: u64) -> bool {
-                    data == u64::MAX
-                }
 
                 #[allow(clippy::forget_copy)]
                 fn stuff_other(inner: Self::Other) -> u64 {
@@ -129,25 +111,20 @@ pub(crate) mod test_strategies {
                     u64::MAX
                 }
 
-                unsafe fn extract_other(_data: u64) -> Self::Other {
-                    $ty
+                unsafe fn extract(data: u64) -> Either<usize, ManuallyDrop<Self::Other>> {
+                    match data == u64::MAX {
+                        true => Either::Other(ManuallyDrop::new($ty)),
+                        false => Either::Ptr(data as usize),
+                    }
                 }
 
                 fn stuff_ptr(addr: usize) -> u64 {
                     addr as u64
                 }
-
-                fn extract_ptr(inner: u64) -> usize {
-                    inner as usize
-                }
             }
 
             unsafe impl StuffingStrategy<u128> for $ty {
                 type Other = Self;
-
-                fn is_other(data: u128) -> bool {
-                    data == u128::MAX
-                }
 
                 #[allow(clippy::forget_copy)]
                 fn stuff_other(inner: Self::Other) -> u128 {
@@ -155,16 +132,15 @@ pub(crate) mod test_strategies {
                     u128::MAX
                 }
 
-                unsafe fn extract_other(_data: u128) -> Self::Other {
-                    $ty
+                unsafe fn extract(data: u128) -> Either<usize, ManuallyDrop<Self::Other>> {
+                    match data == u128::MAX {
+                        true => Either::Other(ManuallyDrop::new($ty)),
+                        false => Either::Ptr(data as usize),
+                    }
                 }
 
                 fn stuff_ptr(addr: usize) -> u128 {
                     addr as u128
-                }
-
-                fn extract_ptr(inner: u128) -> usize {
-                    inner as usize
                 }
             }
         };

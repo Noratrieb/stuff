@@ -6,14 +6,14 @@ use sptr::Strict;
 
 use crate::Backend;
 
-pub struct TaggedPtr<T, S, B = usize>(B::Stored, PhantomData<S>)
+pub struct TaggedPtr<T, S, B = usize>(B::Stored, PhantomData<(S, *mut T)>)
 where
-    B: Backend<T>;
+    B: Backend;
 
 impl<T, S, B> TaggedPtr<T, S, B>
 where
     S: TaggingStrategy<B>,
-    B: Backend<T>,
+    B: Backend,
 {
     pub fn new(ptr: *mut T, tag: S::Tag) -> Self {
         let addr = Strict::addr(ptr);
@@ -44,14 +44,14 @@ where
 
 impl<T, S, B> Clone for TaggedPtr<T, S, B>
 where
-    B: Backend<T>,
+    B: Backend,
 {
     fn clone(&self) -> Self {
         TaggedPtr(self.0, self.1)
     }
 }
 
-impl<T, S, B> Copy for TaggedPtr<T, S, B> where B: Backend<T> {}
+impl<T, S, B> Copy for TaggedPtr<T, S, B> where B: Backend {}
 
 pub trait TaggingStrategy<B> {
     type Tag: Copy;
