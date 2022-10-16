@@ -16,9 +16,8 @@
 //! choice of [`Backend`] (defaults to `usize`, `u64` and `u128` are also possible). It can store a
 //! pointer or some `other` data.
 //!
-//! You can choose any arbitrary bitstuffing depending on the [`StuffingStrategy`], an unsafe trait that governs
-//! how the `other` data (or the pointer itself) will be packed into the backend. While this trait is still unsafe,
-//! it's a lot safer than doing everything by hand.
+//! You can choose any arbitrary bitstuffing depending on the [`StuffingStrategy`], a trait that governs
+//! how the `other` data (or the pointer itself) will be packed into the backend.
 //!
 //! # Example: NaN-Boxing
 //! Pointers are hidden in the NaN values of floats. NaN boxing often involves also hiding booleans
