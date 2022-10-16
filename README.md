@@ -22,9 +22,8 @@ the user, allowing the user to do their bit stuffing only on integers (pointer a
 choice of `Backend` (defaults to `usize`, `u64` and `u128` are also possible). It can store a
 pointer or some `other` data.
 
-You can choose any arbitrary bitstuffing depending on the `StuffingStrategy`, an unsafe trait that governs 
-how the `other` data (or the pointer itself) will be packed into the backend. While this trait is still unsafe,
-it's a lot safer than doing everything by hand.
+You can choose any arbitrary bitstuffing depending on the `StuffingStrategy`, a trait that governs 
+how the `other` data (or the pointer itself) will be packed into the backend.
 
 # Example: NaN-Boxing
 Pointers are hidden in the NaN values of floats. NaN boxing often involves also hiding booleans
@@ -90,4 +89,4 @@ drop(unsafe { Box::from_raw(ptr.ptr().unwrap()) });
 
 # MSRV-Policy
 `stuff`s current MSRV is `1.34.2`. This version *can* get increased in a non-breaking change, but such changes
-are avoided unless necessary. Features requiring a newer Rust version might get gated behind optional features in the futurey.
+are avoided unless necessary. Features requiring a newer Rust version might get gated behind optional features in the future.
